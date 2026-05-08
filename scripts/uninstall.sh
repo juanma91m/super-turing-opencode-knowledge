@@ -87,5 +87,13 @@ for rel_path in "${MANAGED_FILES[@]}"; do
   run rm -f "$src"
 done
 
+if [[ -f "$TARGET_DIR/opencode.json" ]]; then
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '[dry-run] python3 %s remove-engram --config %s\n' "$REPO_DIR/scripts/manage_opencode_config.py" "$TARGET_DIR/opencode.json"
+  else
+    python3 "$REPO_DIR/scripts/manage_opencode_config.py" remove-engram --config "$TARGET_DIR/opencode.json"
+  fi
+fi
+
 log "Assets del addon removidos de $TARGET_DIR"
 log "Estado runtime/local de Engram y Qdrant no se borra automáticamente en esta fase"

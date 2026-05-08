@@ -114,6 +114,35 @@ run_runtime_installers() {
   esac
 }
 
+configure_engram_mcp() {
+  local config_path="$TARGET_DIR/opencode.json"
+  local engram_bin="${HOME}/.opencode/bin/engram"
+  local enabled="false"
+
+  if [[ ! -f "$config_path" ]]; then
+    warn "No existe $config_path; se omite wiring MCP de Engram"
+    return 0
+  fi
+
+  if [[ "$ASSETS_ONLY" -eq 1 || "$MODE" == "qdrant" ]]; then
+    log "Se preserva el wiring MCP de Engram actual"
+    return 0
+  fi
+
+  if [[ -x "$engram_bin" ]]; then
+    enabled="true"
+  else
+    warn "No se encontró Engram en $engram_bin; el bloque MCP de Engram se dejará deshabilitado"
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "Dry-run: se omite merge de MCP Engram en $config_path"
+    return 0
+  fi
+
+  python3 "$REPO_DIR/scripts/manage_opencode_config.py" apply-engram --config "$config_path" --engram-bin "$engram_bin" --enabled "$enabled"
+}
+
 validate_config() {
   if [[ "$VALIDATE" -ne 1 ]]; then
     return 0
@@ -199,6 +228,7 @@ for rel_path in "${MANAGED_FILES[@]}"; do
 done
 
 run_runtime_installers
+configure_engram_mcp
 validate_config
 
 log "Instalación del addon knowledge finalizada"

@@ -78,6 +78,7 @@ printf 'managed_files_missing=%s\n' "$missing"
 printf 'managed_files_mismatched=%s\n' "$mismatched"
 printf 'engram_assets_present=%s\n' "$([[ -f "$TARGET_DIR/scripts/install-knowledge-engram.sh" ]] && printf yes || printf no)"
 printf 'qdrant_assets_present=%s\n' "$([[ -f "$TARGET_DIR/scripts/install-knowledge-qdrant.sh" ]] && printf yes || printf no)"
+printf 'engram_memory_hints_plugin_present=%s\n' "$([[ -f "$TARGET_DIR/plugins/engram-memory-hints.ts" ]] && printf yes || printf no)"
 
 printf '\n## Engram runtime\n'
 if [[ -f "$TARGET_DIR/scripts/knowledge_status_engram.sh" ]]; then

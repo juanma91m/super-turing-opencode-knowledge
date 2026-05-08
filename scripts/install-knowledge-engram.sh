@@ -134,6 +134,7 @@ apply_patch_if_needed() {
 
 build_engram() {
   local go_bin="$1"
+  local tmp_bin
   run mkdir -p "$(dirname "$ENGRAM_BIN")"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "Dry-run: would build Engram with $go_bin into $ENGRAM_BIN"
@@ -141,7 +142,10 @@ build_engram() {
   fi
 
   log "Building Engram into $ENGRAM_BIN"
-  (cd "$ENGRAM_SRC_DIR" && "$go_bin" build -o "$ENGRAM_BIN" ./cmd/engram)
+  tmp_bin="$(mktemp "${ENGRAM_BIN}.tmp.XXXXXX")"
+  trap 'rm -f "$tmp_bin"' RETURN
+  (cd "$ENGRAM_SRC_DIR" && "$go_bin" build -o "$tmp_bin" ./cmd/engram)
+  mv "$tmp_bin" "$ENGRAM_BIN"
 }
 
 while [[ "$#" -gt 0 ]]; do

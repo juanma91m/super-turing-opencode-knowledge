@@ -21,8 +21,11 @@ Este repo pasa a ser dueño de:
 - status por componente,
 - wrappers `knowledge_*`,
 - comandos `/knowledge-*`,
+- `plugins/engram-memory-hints.ts`,
 - `knowledge-curator`,
 - `knowledge-governance-opencode`,
+- `memoria-engram-opencode` como skill backend-specific,
+- wiring del MCP de Engram sobre `~/.config/opencode/opencode.json`,
 - playbooks y manifest del knowledge layer,
 - patch versionado de Engram.
 
@@ -30,8 +33,7 @@ Este repo pasa a ser dueño de:
 
 La capa de compatibilidad cognitiva sigue temporalmente en `super-turing-opencode`, por ejemplo:
 
-- `memoria-engram-opencode`,
-- `plugins/engram-memory-hints.ts`,
+- `memoria-durable-opencode`,
 - y el wiring MCP de Engram en el installer base.
 
 Eso se desacopla en una fase posterior.

@@ -45,7 +45,7 @@ bash ~/.config/opencode/scripts/knowledge_status_engram.sh
 ## Contrato con el stack base
 
 - el stack base sigue decidiendo **cuándo** consultar memoria,
-- `memoria-engram-opencode` sigue modelando la política cognitiva,
+- `memoria-durable-opencode` sigue modelando la política cognitiva,
 - este componente resuelve el backend/runtime de Engram y su MCP.
 
 ## Boundary actual

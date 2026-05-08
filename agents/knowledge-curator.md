@@ -46,7 +46,7 @@ Límites:
 
 Skills sugeridas:
 - `knowledge-governance-opencode`
-- `memoria-engram-opencode`
+- `memoria-durable-opencode`
 - `analisis-tecnico-evidencia`
 - `cambio-seguro-enterprise`
 - `mentoria-tecnica-opencode`

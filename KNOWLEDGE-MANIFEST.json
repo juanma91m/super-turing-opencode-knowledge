@@ -13,6 +13,7 @@
     "commands/knowledge-store-global.md",
     "knowledge/global_seed_paths.txt",
     "patches/engram-source-agent.patch",
+    "plugins/engram-memory-hints.ts",
     "scripts/install-engram.sh",
     "scripts/install-knowledge-engram.sh",
     "scripts/install-knowledge-qdrant.sh",
@@ -25,7 +26,8 @@
     "scripts/knowledge_status_qdrant.sh",
     "scripts/knowledge_store.py",
     "scripts/knowledge_store.sh",
-    "skills/knowledge-governance-opencode/SKILL.md"
+    "skills/knowledge-governance-opencode/SKILL.md",
+    "skills/memoria-engram-opencode/SKILL.md"
   ],
   "machineLocalState": [
     "~/.opencode/bin/engram",

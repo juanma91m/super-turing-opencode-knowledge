@@ -38,6 +38,9 @@ bash scripts/install.sh --assets-only
 ## Qué instala
 
 - assets del knowledge layer en `~/.config/opencode/`
+- skill backend-specific `memoria-engram-opencode`
+- plugin `plugins/engram-memory-hints.ts`
+- merge del bloque MCP de Engram en `~/.config/opencode/opencode.json` cuando corresponde
 - si se pide runtime Engram:
   - `~/.opencode/bin/engram`
   - checkout gestionado de Engram para build/patch
@@ -50,6 +53,25 @@ bash scripts/install.sh --assets-only
 ```bash
 bash scripts/status.sh
 ```
+
+## Interacción con el stack base
+
+- `sync-opencode-stack.sh` normalmente no debería tocar `opencode.json`,
+- `install-opencode-stack.sh` sí puede regenerarlo.
+
+Si reinstalás `super-turing-opencode` después de tener este addon activo, conviene volver a correr:
+
+```bash
+bash scripts/install.sh --all
+```
+
+o al menos:
+
+```bash
+bash scripts/install.sh --engram-only
+```
+
+para reinyectar el MCP de Engram.
 
 Y por componente:
 
