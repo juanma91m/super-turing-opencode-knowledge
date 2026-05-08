@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "opencode debug config*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git branch*": "allow",
+      "git remote*": "allow",
+      "git add*": "allow",
+      "git commit*": "allow",
+      "git push*": "allow",
+      "bash scripts/install.sh*": "allow",
+      "bash \"scripts/install.sh\"*": "allow",
+      "bash scripts/status.sh*": "allow",
+      "bash \"scripts/status.sh\"*": "allow",
+      "bash scripts/uninstall.sh*": "allow",
+      "bash \"scripts/uninstall.sh\"*": "allow",
+      "bash scripts/install-knowledge-engram.sh*": "allow",
+      "bash \"scripts/install-knowledge-engram.sh\"*": "allow",
+      "bash scripts/install-knowledge-qdrant.sh*": "allow",
+      "bash \"scripts/install-knowledge-qdrant.sh\"*": "allow",
+      "bash scripts/install-knowledge.sh*": "allow",
+      "bash \"scripts/install-knowledge.sh\"*": "allow"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "super-turing-opencode-knowledge",
+  "version": "0.1.0",
+  "managedFiles": [
+    "PLAYBOOK-KNOWLEDGE.md",
+    "PLAYBOOK-KNOWLEDGE-ENGRAM.md",
+    "PLAYBOOK-KNOWLEDGE-QDRANT.md",
+    "agents/knowledge-curator.md",
+    "commands/knowledge-index-global.md",
+    "commands/knowledge-search.md",
+    "commands/knowledge-status.md",
+    "commands/knowledge-store-global.md",
+    "knowledge/global_seed_paths.txt",
+    "patches/engram-source-agent.patch",
+    "scripts/install-engram.sh",
+    "scripts/install-knowledge-engram.sh",
+    "scripts/install-knowledge-qdrant.sh",
+    "scripts/install-knowledge.sh",
+    "scripts/knowledge_env.sh",
+    "scripts/knowledge_search.sh",
+    "scripts/knowledge_seed_global.sh",
+    "scripts/knowledge_status.sh",
+    "scripts/knowledge_status_engram.sh",
+    "scripts/knowledge_status_qdrant.sh",
+    "scripts/knowledge_store.py",
+    "scripts/knowledge_store.sh",
+    "skills/knowledge-governance-opencode/SKILL.md"
+  ],
+  "machineLocalState": [
+    "~/.opencode/bin/engram",
+    "~/.engram/engram.db",
+    "~/.local/share/super-turing-opencode-knowledge/"
+  ],
+  "notes": [
+    "este repo agrupa Engram y Qdrant bajo un mismo addon de knowledge, pero mantiene installers y status por componente",
+    "la capa de compatibilidad cognitiva con el stack base sigue temporalmente en super-turing-opencode y se desacopla en una fase posterior",
+    "install.sh instala por defecto todos los assets del addon y puede bootstrappear solo Engram, solo Qdrant o ambos"
+  ]
+}

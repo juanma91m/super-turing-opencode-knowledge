@@ -1,0 +1,683 @@
+diff --git a/DOCS.md b/DOCS.md
+index 1ab0312..49e5202 100644
+--- a/DOCS.md
++++ b/DOCS.md
+@@ -129,7 +129,7 @@ All endpoints return JSON. Server listens on `127.0.0.1:7437`.
+ 
+ ### mem_search
+ 
+-Search persistent memory across all sessions. Supports FTS5 full-text search with type/project/scope/limit filters.
++Search persistent memory across all sessions. Supports FTS5 full-text search with type/project/scope/limit filters, plus optional `source_agent` filtering via the stored `tool_name` field.
+ 
+ ### mem_save
+ 
+@@ -139,6 +139,7 @@ Save structured observations. The tool description teaches agents the format:
+ - **type**: `decision` | `architecture` | `bugfix` | `pattern` | `config` | `discovery` | `learning`
+ - **scope**: `project` (default) | `personal`
+ - **topic_key**: optional canonical topic id (e.g. `architecture/auth-model`) used to upsert evolving memories
++- **source_agent**: optional agent identifier (persisted as `tool_name=agent:<source_agent>`) so future sessions can attribute and prioritize memories by author
+ - **content**: Structured with `**What**`, `**Why**`, `**Where**`, `**Learned**`
+ 
+ Exact duplicate saves are deduplicated in a rolling time window using a normalized content hash + project + scope + type + title.
+@@ -146,7 +147,7 @@ When `topic_key` is provided, `mem_save` upserts the latest observation in the s
+ 
+ ### mem_update
+ 
+-Update an observation by ID. Supports partial updates for `title`, `content`, `type`, `project`, `scope`, and `topic_key`.
++Update an observation by ID. Supports partial updates for `title`, `content`, `type`, `project`, `scope`, `topic_key`, and `source_agent`.
+ 
+ ### mem_suggest_topic_key
+ 
+@@ -162,7 +163,7 @@ Save user prompts — records what the user asked so future sessions have contex
+ 
+ ### mem_context
+ 
+-Get recent memory context from previous sessions — shows sessions, prompts, and observations, with optional scope filtering for observations.
++Get recent memory context from previous sessions — shows sessions, prompts, and observations, with optional scope filtering for observations. Observation lines include source metadata when memories were saved with `source_agent`.
+ 
+ ### mem_stats
+ 
+@@ -181,6 +182,8 @@ Get full untruncated content of a specific observation by ID.
+ Save comprehensive end-of-session summary:
+ 
+ ```
++
++Also accepts optional `source_agent`, stored as `tool_name=agent:<source_agent>` on the summary observation.
+ ## Goal
+ ## Instructions
+ ## Discoveries
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index f149550..6cc3518 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -87,6 +87,7 @@ Token-efficient memory retrieval — don't dump everything, drill in:
+ 
+ - `mem_save` now supports `scope` (`project` default, `personal` optional)
+ - `mem_save` also supports `topic_key`; with a topic key, saves become upserts (same project+scope+topic updates the existing memory)
++- `mem_save` and `mem_session_summary` can persist `source_agent` as `tool_name=agent:<name>` for author-aware retrieval
+ - Exact dedupe prevents repeated inserts in a rolling window (hash + project + scope + type + title)
+ - Duplicates update metadata (`duplicate_count`, `last_seen_at`, `updated_at`) instead of creating new rows
+ - Topic upserts increment `revision_count` so evolving decisions stay in one memory
+diff --git a/internal/mcp/mcp.go b/internal/mcp/mcp.go
+index 798b4e0..7c34575 100644
+--- a/internal/mcp/mcp.go
++++ b/internal/mcp/mcp.go
+@@ -176,7 +176,7 @@ func registerTools(srv *server.MCPServer, s *store.Store, cfg MCPConfig, allowli
+ 	if shouldRegister("mem_search", allowlist) {
+ 		srv.AddTool(
+ 			mcp.NewTool("mem_search",
+-				mcp.WithDescription("Search your persistent memory across all sessions. Use this to find past decisions, bugs fixed, patterns used, files changed, or any context from previous coding sessions."),
++				mcp.WithDescription("Search your persistent memory across all sessions. Use this to find past decisions, bugs fixed, patterns used, files changed, or any context from previous coding sessions. Results are previews; if a result matters, call mem_get_observation with its ID before relying on the full content. Use source_agent when memories from a specific specialist should be prioritized or filtered."),
+ 				mcp.WithTitleAnnotation("Search Memory"),
+ 				mcp.WithReadOnlyHintAnnotation(true),
+ 				mcp.WithDestructiveHintAnnotation(false),
+@@ -195,6 +195,9 @@ func registerTools(srv *server.MCPServer, s *store.Store, cfg MCPConfig, allowli
+ 				mcp.WithString("scope",
+ 					mcp.Description("Filter by scope: project (default) or personal"),
+ 				),
++				mcp.WithString("source_agent",
++					mcp.Description("Optional source agent filter, e.g. frontend-web-developer or ui-web-designer"),
++				),
+ 				mcp.WithNumber("limit",
+ 					mcp.Description("Max results (default: 10, max: 20)"),
+ 				),
+@@ -214,6 +217,8 @@ func registerTools(srv *server.MCPServer, s *store.Store, cfg MCPConfig, allowli
+ 				mcp.WithOpenWorldHintAnnotation(false),
+ 				mcp.WithDescription(`Save an important observation to persistent memory. Call this PROACTIVELY after completing significant work — don't wait to be asked.
+ 
++Engram is working memory for future sessions, not a full audit trail. Save durable knowledge, not raw logs or noisy transcript fragments.
++
+ WHEN to save (call this after each of these):
+ - Architectural decisions or tradeoffs
+ - Bug fixes (what was wrong, why, how you fixed it)
+@@ -261,6 +266,9 @@ Examples:
+ 				mcp.WithString("topic_key",
+ 					mcp.Description("Optional topic identifier for upserts (e.g. architecture/auth-model). Reuses and updates the latest observation in same project+scope."),
+ 				),
++				mcp.WithString("source_agent",
++					mcp.Description("Optional source agent responsible for this memory, e.g. master-dev or frontend-web-developer"),
++				),
+ 			),
+ 			handleSave(s, cfg, activity),
+ 		)
+@@ -299,6 +307,9 @@ Examples:
+ 				mcp.WithString("topic_key",
+ 					mcp.Description("New topic key (normalized internally)"),
+ 				),
++				mcp.WithString("source_agent",
++					mcp.Description("Optional source agent responsible for the current authoritative version"),
++				),
+ 			),
+ 			handleUpdate(s),
+ 		)
+@@ -381,7 +392,7 @@ Examples:
+ 	if shouldRegister("mem_context", allowlist) {
+ 		srv.AddTool(
+ 			mcp.NewTool("mem_context",
+-				mcp.WithDescription("Get recent memory context from previous sessions. Shows recent sessions and observations to understand what was done before."),
++				mcp.WithDescription("Get recent memory context from previous sessions. Use this first when you need fast recent context. It shows recent sessions and observations, including source metadata when available. If a specific result becomes important, follow up with mem_search or mem_get_observation for full detail."),
+ 				mcp.WithTitleAnnotation("Get Memory Context"),
+ 				mcp.WithReadOnlyHintAnnotation(true),
+ 				mcp.WithDestructiveHintAnnotation(false),
+@@ -473,6 +484,8 @@ Examples:
+ 				mcp.WithOpenWorldHintAnnotation(false),
+ 				mcp.WithDescription(`Save a comprehensive end-of-session summary. Call this when a session is ending or when significant work is complete. This creates a structured summary that future sessions will use to understand what happened.
+ 
++Use session summaries for continuity checkpoints, not as a replacement for explicit mem_save calls about important decisions, discoveries, or reusable patterns.
++
+ FORMAT — use this exact structure in the content field:
+ 
+ ## Goal
+@@ -512,6 +525,9 @@ GUIDELINES:
+ 					mcp.Required(),
+ 					mcp.Description("Project name"),
+ 				),
++				mcp.WithString("source_agent",
++					mcp.Description("Optional source agent responsible for this summary, e.g. master-dev"),
++				),
+ 			),
+ 			handleSessionSummary(s, cfg, activity),
+ 		)
+@@ -636,6 +652,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+ 		typ, _ := req.GetArguments()["type"].(string)
+ 		project, _ := req.GetArguments()["project"].(string)
+ 		scope, _ := req.GetArguments()["scope"].(string)
++		sourceAgent, _ := req.GetArguments()["source_agent"].(string)
+ 		limit := intArg(req, "limit", 10)
+ 
+ 		// Apply default project when LLM sends empty
+@@ -649,10 +666,11 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+ 		activity.RecordToolCall(sessionID)
+ 
+ 		results, err := s.Search(query, store.SearchOptions{
+-			Type:    typ,
+-			Project: project,
+-			Scope:   scope,
+-			Limit:   limit,
++			Type:     typ,
++			Project:  project,
++			Scope:    scope,
++			ToolName: normalizeSourceAgent(sourceAgent),
++			Limit:    limit,
+ 		})
+ 		if err != nil {
+ 			return mcp.NewToolResultError(fmt.Sprintf("Search error: %s. Try simpler keywords.", err)), nil
+@@ -670,6 +688,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+ 			if r.Project != nil {
+ 				projectDisplay = fmt.Sprintf(" | project: %s", *r.Project)
+ 			}
++			sourceDisplay := ""
++			if label := sourceAgentLabel(r.ToolName); label != "" {
++				sourceDisplay = fmt.Sprintf(" | source: %s", label)
++			}
+ 			preview := truncate(r.Content, 300)
+ 			if len(r.Content) > 300 {
+ 				anyTruncated = true
+@@ -678,7 +700,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+ 			fmt.Fprintf(&b, "[%d] #%d (%s) — %s\n    %s\n    %s%s | scope: %s\n\n",
+ 				i+1, r.ID, r.Type, r.Title,
+ 				preview,
+-				r.CreatedAt, projectDisplay, r.Scope)
++				r.CreatedAt, projectDisplay+sourceDisplay, r.Scope)
+ 		}
+ 		if anyTruncated {
+ 			fmt.Fprintf(&b, "---\nResults above are previews (300 chars). To read the full content of a specific memory, call mem_get_observation(id: <ID>).\n")
+@@ -701,6 +723,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+ 		project, _ := req.GetArguments()["project"].(string)
+ 		scope, _ := req.GetArguments()["scope"].(string)
+ 		topicKey, _ := req.GetArguments()["topic_key"].(string)
++		sourceAgent, _ := req.GetArguments()["source_agent"].(string)
+ 
+ 		// Apply default project when LLM sends empty
+ 		if project == "" {
+@@ -750,6 +773,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+ 			Type:      typ,
+ 			Title:     title,
+ 			Content:   content,
++			ToolName:  normalizeSourceAgent(sourceAgent),
+ 			Project:   project,
+ 			Scope:     scope,
+ 			TopicKey:  topicKey,
+@@ -773,6 +797,9 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+ 		if similarWarning != "" {
+ 			msg += "\n" + similarWarning
+ 		}
++		if sourceAgent != "" {
++			msg += fmt.Sprintf("\nSource agent: %s", strings.TrimSpace(sourceAgent))
++		}
+ 		return mcp.NewToolResultText(msg), nil
+ 	}
+ }
+@@ -822,8 +849,12 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
+ 		if v, ok := req.GetArguments()["topic_key"].(string); ok {
+ 			update.TopicKey = &v
+ 		}
++		if v, ok := req.GetArguments()["source_agent"].(string); ok {
++			toolName := normalizeSourceAgent(v)
++			update.ToolName = &toolName
++		}
+ 
+-		if update.Title == nil && update.Content == nil && update.Type == nil && update.Project == nil && update.Scope == nil && update.TopicKey == nil {
++		if update.Title == nil && update.Content == nil && update.Type == nil && update.Project == nil && update.Scope == nil && update.ToolName == nil && update.TopicKey == nil {
+ 			return mcp.NewToolResultError("provide at least one field to update"), nil
+ 		}
+ 
+@@ -838,6 +869,9 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
+ 		}
+ 
+ 		msg := fmt.Sprintf("Memory updated: #%d %q (%s, scope=%s)", obs.ID, obs.Title, obs.Type, obs.Scope)
++		if label := sourceAgentLabel(obs.ToolName); label != "" {
++			msg += fmt.Sprintf("\nSource agent: %s", label)
++		}
+ 		if contentLen > s.MaxObservationLength() {
+ 			msg += fmt.Sprintf("\n⚠ WARNING: Content was truncated from %d to %d chars. Consider splitting into smaller observations.", contentLen, s.MaxObservationLength())
+ 		}
+@@ -1035,7 +1069,11 @@ func handleGetObservation(s *store.Store) server.ToolHandlerFunc {
+ 		}
+ 		toolName := ""
+ 		if obs.ToolName != nil {
+-			toolName = fmt.Sprintf("\nTool: %s", *obs.ToolName)
++			if label := sourceAgentLabel(obs.ToolName); label != "" {
++				toolName = fmt.Sprintf("\nSource Agent: %s", label)
++			} else {
++				toolName = fmt.Sprintf("\nTool: %s", *obs.ToolName)
++			}
+ 		}
+ 		duplicateMeta := fmt.Sprintf("\nDuplicates: %d", obs.DuplicateCount)
+ 		revisionMeta := fmt.Sprintf("\nRevisions: %d", obs.RevisionCount)
+@@ -1056,6 +1094,7 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+ 		content, _ := req.GetArguments()["content"].(string)
+ 		sessionID, _ := req.GetArguments()["session_id"].(string)
+ 		project, _ := req.GetArguments()["project"].(string)
++		sourceAgent, _ := req.GetArguments()["source_agent"].(string)
+ 
+ 		// Apply default project when LLM sends empty
+ 		if project == "" {
+@@ -1075,6 +1114,7 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+ 			Type:      "session_summary",
+ 			Title:     fmt.Sprintf("Session summary: %s", project),
+ 			Content:   content,
++			ToolName:  normalizeSourceAgent(sourceAgent),
+ 			Project:   project,
+ 		})
+ 		if err != nil {
+@@ -1224,6 +1264,28 @@ func defaultSessionID(project string) string {
+ 	return "manual-save-" + project
+ }
+ 
++func normalizeSourceAgent(sourceAgent string) string {
++	sourceAgent = strings.TrimSpace(sourceAgent)
++	if sourceAgent == "" {
++		return ""
++	}
++	if strings.HasPrefix(sourceAgent, "agent:") {
++		return sourceAgent
++	}
++	return "agent:" + sourceAgent
++}
++
++func sourceAgentLabel(toolName *string) string {
++	if toolName == nil {
++		return ""
++	}
++	raw := strings.TrimSpace(*toolName)
++	if raw == "" || !strings.HasPrefix(raw, "agent:") {
++		return ""
++	}
++	return strings.TrimPrefix(raw, "agent:")
++}
++
+ func intArg(req mcp.CallToolRequest, key string, defaultVal int) int {
+ 	v, ok := req.GetArguments()[key].(float64)
+ 	if !ok {
+diff --git a/internal/mcp/mcp_test.go b/internal/mcp/mcp_test.go
+index 952369a..ea8d825 100644
+--- a/internal/mcp/mcp_test.go
++++ b/internal/mcp/mcp_test.go
+@@ -364,6 +364,89 @@ func TestHandleSearchAndCRUDHandlers(t *testing.T) {
+ 	}
+ }
+ 
++func TestHandleSavePersistsSourceAgent(t *testing.T) {
++	s := newMCPTestStore(t)
++	h := handleSave(s, MCPConfig{}, NewSessionActivity(10*time.Minute))
++
++	res, err := h(context.Background(), mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
++		"title":        "React pattern",
++		"content":      "**What**: Stored a reusable React pattern\n**Why**: Useful later\n**Where**: mem-tech-react\n**Learned**: Reuse source metadata",
++		"type":         "pattern",
++		"project":      "mem-tech-react",
++		"scope":        "personal",
++		"topic_key":    "pattern/react-reuse",
++		"source_agent": "frontend-web-developer",
++	}}})
++	if err != nil {
++		t.Fatalf("save handler error: %v", err)
++	}
++	if res.IsError {
++		t.Fatalf("unexpected save error: %s", callResultText(t, res))
++	}
++
++	obs, err := s.RecentObservations("mem-tech-react", "personal", 5)
++	if err != nil {
++		t.Fatalf("recent observations: %v", err)
++	}
++	if len(obs) != 1 {
++		t.Fatalf("expected one observation, got %d", len(obs))
++	}
++	if obs[0].ToolName == nil || *obs[0].ToolName != "agent:frontend-web-developer" {
++		t.Fatalf("expected source agent tool name, got %+v", obs[0].ToolName)
++	}
++}
++
++func TestHandleSearchCanFilterBySourceAgent(t *testing.T) {
++	s := newMCPTestStore(t)
++	if err := s.CreateSession("s-source-search", "engram", "/tmp/engram"); err != nil {
++		t.Fatalf("create session: %v", err)
++	}
++	_, err := s.AddObservation(store.AddObservationParams{
++		SessionID: "s-source-search",
++		Type:      "pattern",
++		Title:     "Frontend cache pattern",
++		Content:   "cache pattern for react forms",
++		Project:   "engram",
++		Scope:     "project",
++		ToolName:  "agent:frontend-web-developer",
++	})
++	if err != nil {
++		t.Fatalf("add frontend observation: %v", err)
++	}
++	_, err = s.AddObservation(store.AddObservationParams{
++		SessionID: "s-source-search",
++		Type:      "pattern",
++		Title:     "Backend cache pattern",
++		Content:   "cache pattern for service layer",
++		Project:   "engram",
++		Scope:     "project",
++		ToolName:  "agent:backend-java-developer",
++	})
++	if err != nil {
++		t.Fatalf("add backend observation: %v", err)
++	}
++
++	res, err := handleSearch(s, MCPConfig{}, NewSessionActivity(10*time.Minute))(context.Background(), mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
++		"query":        "cache pattern",
++		"project":      "engram",
++		"scope":        "project",
++		"source_agent": "frontend-web-developer",
++	}}})
++	if err != nil {
++		t.Fatalf("search handler error: %v", err)
++	}
++	if res.IsError {
++		t.Fatalf("unexpected search error: %s", callResultText(t, res))
++	}
++	text := callResultText(t, res)
++	if !strings.Contains(text, "Frontend cache pattern") || strings.Contains(text, "Backend cache pattern") {
++		t.Fatalf("expected only frontend result, got %q", text)
++	}
++	if !strings.Contains(text, "source: frontend-web-developer") {
++		t.Fatalf("expected source metadata in search output, got %q", text)
++	}
++}
++
+ func TestHandlePromptContextStatsTimelineAndSessionHandlers(t *testing.T) {
+ 	s := newMCPTestStore(t)
+ 	if err := s.CreateSession("s-flow", "engram", "/tmp/engram"); err != nil {
+@@ -777,13 +860,14 @@ func TestHandleUpdateAcceptsAllOptionalFields(t *testing.T) {
+ 	}
+ 
+ 	res, err := handleUpdate(s)(context.Background(), mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
+-		"id":        float64(id),
+-		"title":     "Updated",
+-		"content":   "Updated content",
+-		"type":      "architecture",
+-		"project":   "engram",
+-		"scope":     "personal",
+-		"topic_key": "architecture/auth-model",
++		"id":           float64(id),
++		"title":        "Updated",
++		"content":      "Updated content",
++		"type":         "architecture",
++		"project":      "engram",
++		"scope":        "personal",
++		"topic_key":    "architecture/auth-model",
++		"source_agent": "master-dev",
+ 	}}})
+ 	if err != nil {
+ 		t.Fatalf("update handler error: %v", err)
+@@ -791,6 +875,13 @@ func TestHandleUpdateAcceptsAllOptionalFields(t *testing.T) {
+ 	if res.IsError {
+ 		t.Fatalf("unexpected update error: %s", callResultText(t, res))
+ 	}
++	obs, err := s.GetObservation(id)
++	if err != nil {
++		t.Fatalf("get observation: %v", err)
++	}
++	if obs.ToolName == nil || *obs.ToolName != "agent:master-dev" {
++		t.Fatalf("expected updated source agent, got %+v", obs.ToolName)
++	}
+ }
+ 
+ func TestHandleContextWithSessionOnlyUsesNoneProjects(t *testing.T) {
+@@ -903,6 +994,39 @@ func TestHandleGetObservationIncludesTopicAndToolMetadata(t *testing.T) {
+ 	}
+ }
+ 
++func TestHandleGetObservationShowsSourceAgentLabel(t *testing.T) {
++	s := newMCPTestStore(t)
++	if err := s.CreateSession("s-get-source", "engram", "/tmp/engram"); err != nil {
++		t.Fatalf("create session: %v", err)
++	}
++	id, err := s.AddObservation(store.AddObservationParams{
++		SessionID: "s-get-source",
++		Type:      "pattern",
++		Title:     "UI source",
++		Content:   "Details",
++		Project:   "engram",
++		ToolName:  "agent:ui-web-designer",
++		TopicKey:  "ui/filter-layout",
++	})
++	if err != nil {
++		t.Fatalf("add observation: %v", err)
++	}
++
++	res, err := handleGetObservation(s)(context.Background(), mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
++		"id": float64(id),
++	}}})
++	if err != nil {
++		t.Fatalf("get observation handler error: %v", err)
++	}
++	if res.IsError {
++		t.Fatalf("unexpected get observation error: %s", callResultText(t, res))
++	}
++	text := callResultText(t, res)
++	if !strings.Contains(text, "Source Agent: ui-web-designer") {
++		t.Fatalf("expected source agent label in output, got %q", text)
++	}
++}
++
+ // ─── Tool Profile Tests ─────────────────────────────────────────────────────
+ 
+ func TestResolveToolsEmpty(t *testing.T) {
+diff --git a/internal/store/store.go b/internal/store/store.go
+index 7ea81eb..e7c57bf 100644
+--- a/internal/store/store.go
++++ b/internal/store/store.go
+@@ -116,10 +116,11 @@ type TimelineResult struct {
+ }
+ 
+ type SearchOptions struct {
+-	Type    string `json:"type,omitempty"`
+-	Project string `json:"project,omitempty"`
+-	Scope   string `json:"scope,omitempty"`
+-	Limit   int    `json:"limit,omitempty"`
++	Type     string `json:"type,omitempty"`
++	Project  string `json:"project,omitempty"`
++	Scope    string `json:"scope,omitempty"`
++	ToolName string `json:"tool_name,omitempty"`
++	Limit    int    `json:"limit,omitempty"`
+ }
+ 
+ type AddObservationParams struct {
+@@ -139,6 +140,7 @@ type UpdateObservationParams struct {
+ 	Content  *string `json:"content,omitempty"`
+ 	Project  *string `json:"project,omitempty"`
+ 	Scope    *string `json:"scope,omitempty"`
++	ToolName *string `json:"tool_name,omitempty"`
+ 	TopicKey *string `json:"topic_key,omitempty"`
+ }
+ 
+@@ -1344,6 +1346,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
+ 		content := obs.Content
+ 		project := derefString(obs.Project)
+ 		scope := obs.Scope
++		toolName := derefString(obs.ToolName)
+ 		topicKey := derefString(obs.TopicKey)
+ 
+ 		if p.Type != nil {
+@@ -1364,6 +1367,9 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
+ 		if p.Scope != nil {
+ 			scope = normalizeScope(*p.Scope)
+ 		}
++		if p.ToolName != nil {
++			toolName = strings.TrimSpace(*p.ToolName)
++		}
+ 		if p.TopicKey != nil {
+ 			topicKey = normalizeTopicKey(*p.TopicKey)
+ 		}
+@@ -1375,6 +1381,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
+ 			     content = ?,
+ 			     project = ?,
+ 			     scope = ?,
++			     tool_name = ?,
+ 			     topic_key = ?,
+ 			     normalized_hash = ?,
+ 			     revision_count = revision_count + 1,
+@@ -1385,6 +1392,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
+ 			content,
+ 			nullableString(project),
+ 			scope,
++			nullableString(toolName),
+ 			nullableString(topicKey),
+ 			hashNormalized(content),
+ 			id,
+@@ -1556,6 +1564,7 @@ func (s *Store) Timeline(observationID int64, before, after int) (*TimelineResul
+ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error) {
+ 	// Normalize project filter so "Engram" finds records stored as "engram"
+ 	opts.Project, _ = NormalizeProject(opts.Project)
++	opts.ToolName = strings.TrimSpace(opts.ToolName)
+ 
+ 	limit := opts.Limit
+ 	if limit <= 0 {
+@@ -1587,6 +1596,10 @@ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error)
+ 			tkSQL += " AND scope = ?"
+ 			tkArgs = append(tkArgs, normalizeScope(opts.Scope))
+ 		}
++		if opts.ToolName != "" {
++			tkSQL += " AND ifnull(tool_name, '') = ?"
++			tkArgs = append(tkArgs, opts.ToolName)
++		}
+ 
+ 		tkSQL += " ORDER BY updated_at DESC LIMIT ?"
+ 		tkArgs = append(tkArgs, limit)
+@@ -1637,6 +1650,11 @@ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error)
+ 		args = append(args, normalizeScope(opts.Scope))
+ 	}
+ 
++	if opts.ToolName != "" {
++		sqlQ += " AND ifnull(o.tool_name, '') = ?"
++		args = append(args, opts.ToolName)
++	}
++
+ 	sqlQ += " ORDER BY fts.rank LIMIT ?"
+ 	args = append(args, limit)
+ 
+@@ -1751,8 +1769,8 @@ func (s *Store) FormatContext(project, scope string) (string, error) {
+ 	if len(observations) > 0 {
+ 		b.WriteString("### Recent Observations\n")
+ 		for _, obs := range observations {
+-			fmt.Fprintf(&b, "- [%s] **%s**: %s\n",
+-				obs.Type, obs.Title, truncate(obs.Content, 300))
++			fmt.Fprintf(&b, "- [%s] **%s**%s: %s\n",
++				obs.Type, obs.Title, contextSourceSuffix(obs.ToolName), truncate(obs.Content, 300))
+ 		}
+ 		b.WriteString("\n")
+ 	}
+@@ -1760,6 +1778,17 @@ func (s *Store) FormatContext(project, scope string) (string, error) {
+ 	return b.String(), nil
+ }
+ 
++func contextSourceSuffix(toolName *string) string {
++	if toolName == nil {
++		return ""
++	}
++	raw := strings.TrimSpace(*toolName)
++	if raw == "" {
++		return ""
++	}
++	return fmt.Sprintf(" [source: %s]", strings.TrimPrefix(raw, "agent:"))
++}
++
+ // ─── Export / Import ─────────────────────────────────────────────────────────
+ 
+ func (s *Store) Export() (*ExportData, error) {
+diff --git a/internal/store/store_test.go b/internal/store/store_test.go
+index 8d8bf12..d62fddd 100644
+--- a/internal/store/store_test.go
++++ b/internal/store/store_test.go
+@@ -866,6 +866,58 @@ func TestPassiveCaptureEmptyContent(t *testing.T) {
+ 	}
+ }
+ 
++func TestSearchCanFilterByToolNameAndFormatContextShowsSource(t *testing.T) {
++	s := newTestStore(t)
++
++	if err := s.CreateSession("s-source", "engram", "/tmp/engram"); err != nil {
++		t.Fatalf("create session: %v", err)
++	}
++
++	_, err := s.AddObservation(AddObservationParams{
++		SessionID: "s-source",
++		Type:      "pattern",
++		Title:     "React cache pattern",
++		Content:   "cache invalidation strategy for react queries",
++		Project:   "engram",
++		Scope:     "project",
++		ToolName:  "agent:frontend-web-developer",
++	})
++	if err != nil {
++		t.Fatalf("add frontend observation: %v", err)
++	}
++	_, err = s.AddObservation(AddObservationParams{
++		SessionID: "s-source",
++		Type:      "pattern",
++		Title:     "Backend cache pattern",
++		Content:   "cache invalidation strategy for service layer",
++		Project:   "engram",
++		Scope:     "project",
++		ToolName:  "agent:backend-java-developer",
++	})
++	if err != nil {
++		t.Fatalf("add backend observation: %v", err)
++	}
++
++	results, err := s.Search("cache", SearchOptions{Project: "engram", Scope: "project", ToolName: "agent:frontend-web-developer", Limit: 10})
++	if err != nil {
++		t.Fatalf("search with tool filter: %v", err)
++	}
++	if len(results) != 1 {
++		t.Fatalf("expected one filtered result, got %d", len(results))
++	}
++	if results[0].ToolName == nil || *results[0].ToolName != "agent:frontend-web-developer" {
++		t.Fatalf("expected frontend source, got %+v", results[0].ToolName)
++	}
++
++	ctx, err := s.FormatContext("engram", "project")
++	if err != nil {
++		t.Fatalf("format context: %v", err)
++	}
++	if !strings.Contains(ctx, "[source: frontend-web-developer]") {
++		t.Fatalf("expected formatted source in context, got %q", ctx)
++	}
++}
++
+ func TestPassiveCaptureDedupesAgainstExistingObservations(t *testing.T) {
+ 	s := newTestStore(t)
+ 
+@@ -1599,6 +1651,35 @@ func TestStoreAdditionalQueryAndMutationBranches(t *testing.T) {
+ 	}
+ }
+ 
++func TestUpdateObservationCanChangeToolName(t *testing.T) {
++	s := newTestStore(t)
++
++	if err := s.CreateSession("s-tool-update", "engram", "/tmp/engram"); err != nil {
++		t.Fatalf("create session: %v", err)
++	}
++	obsID, err := s.AddObservation(AddObservationParams{
++		SessionID: "s-tool-update",
++		Type:      "decision",
++		Title:     "Original author",
++		Content:   "Initial content",
++		Project:   "engram",
++		Scope:     "project",
++		ToolName:  "agent:master-dev",
++	})
++	if err != nil {
++		t.Fatalf("add observation: %v", err)
++	}
++
++	newToolName := "agent:reviewer"
++	updated, err := s.UpdateObservation(obsID, UpdateObservationParams{ToolName: &newToolName})
++	if err != nil {
++		t.Fatalf("update observation tool name: %v", err)
++	}
++	if updated.ToolName == nil || *updated.ToolName != newToolName {
++		t.Fatalf("expected updated tool name %q, got %+v", newToolName, updated.ToolName)
++	}
++}
++
+ func TestStoreErrorBranchesWithClosedDatabase(t *testing.T) {
+ 	s := newTestStore(t)
+ 
