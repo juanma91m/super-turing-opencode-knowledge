@@ -77,6 +77,12 @@ load_managed_files
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$TARGET_DIR/.knowledge-addon-backups/uninstall-$TIMESTAMP"
 
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  printf '[dry-run] python3 %s remove --target-dir %s\n' "$REPO_DIR/scripts/manage_agent_autonomy.py" "$TARGET_DIR"
+else
+  python3 "$REPO_DIR/scripts/manage_agent_autonomy.py" remove --target-dir "$TARGET_DIR"
+fi
+
 for rel_path in "${MANAGED_FILES[@]}"; do
   src="$TARGET_DIR/$rel_path"
   if [[ ! -e "$src" ]]; then

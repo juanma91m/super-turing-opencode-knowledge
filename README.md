@@ -9,6 +9,19 @@ Este repo agrupa dos componentes relacionados pero separados:
 - **Engram**: memoria curada, durable y de alta señal
 - **Qdrant**: retrieval sobre corpus recuperable y regenerable
 
+## Autonomía del addon
+
+Este addon puede inyectar autonomía conservadora de knowledge en agentes existentes:
+
+- siempre instala overlays para `plan` y `build`,
+- y si en la instalación activa existen `planner`, `master-dev` o `agent-design`, les agrega una capa aditiva para consultar contexto durable/retrieval sin esperar a que el usuario lo pida explícitamente.
+
+La escritura automática global queda deliberadamente conservadora:
+
+- leer autónomamente: sí,
+- persistir resúmenes durables: sí, cuando el hallazgo es claramente reusable,
+- indexar corpus en Qdrant por reflejo: no.
+
 ## Supuesto operativo actual
 
 Este addon asume una instalación base de OpenCode ya funcional, típicamente con `super-turing-opencode` como capa principal en `~/.config/opencode/`.
@@ -23,6 +36,8 @@ Este repo pasa a ser dueño de:
 - comandos `/knowledge-*`,
 - comando `/memory-init`,
 - `plugins/engram-memory-hints.ts`,
+- `knowledge-reader`,
+- overlays de autonomía para `plan` y `build`,
 - `knowledge-curator`,
 - `knowledge-governance-opencode`,
 - `memoria-durable-opencode` como skill backend-agnostic,
@@ -35,7 +50,6 @@ Este repo pasa a ser dueño de:
 
 La capa de compatibilidad cognitiva sigue temporalmente en `super-turing-opencode`, por ejemplo:
 
-- `memoria-durable-opencode`,
 - y el wiring MCP de Engram en el installer base.
 
 Eso se desacopla en una fase posterior.

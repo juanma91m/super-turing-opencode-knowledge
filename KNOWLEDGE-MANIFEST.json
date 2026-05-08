@@ -6,7 +6,10 @@
     "PLAYBOOK-KNOWLEDGE.md",
     "PLAYBOOK-KNOWLEDGE-ENGRAM.md",
     "PLAYBOOK-KNOWLEDGE-QDRANT.md",
+    "agents/build.md",
+    "agents/knowledge-reader.md",
     "agents/knowledge-curator.md",
+    "agents/plan.md",
     "commands/memory-init.md",
     "commands/knowledge-index-global.md",
     "commands/knowledge-search.md",
@@ -39,6 +42,7 @@
   "notes": [
     "este repo agrupa Engram y Qdrant bajo un mismo addon de knowledge, pero mantiene installers y status por componente",
     "la capa de compatibilidad cognitiva con el stack base sigue temporalmente en super-turing-opencode y se desacopla en una fase posterior",
-    "install.sh instala por defecto todos los assets del addon y puede bootstrappear solo Engram, solo Qdrant o ambos"
+    "install.sh instala por defecto todos los assets del addon y puede bootstrappear solo Engram, solo Qdrant o ambos",
+    "el addon inyecta autonomía conservadora de knowledge en plan/build y la complementa en planner/master-dev/agent-design si esos agentes existen en la instalación activa"
   ]
 }

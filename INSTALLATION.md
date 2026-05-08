@@ -38,6 +38,9 @@ bash scripts/install.sh --assets-only
 ## Qué instala
 
 - assets del knowledge layer en `~/.config/opencode/`
+- overlays de autonomía para `agents/plan.md` y `agents/build.md`
+- patch aditivo sobre `planner`, `master-dev` y `agent-design` si existen en la instalación destino
+- skill backend-agnostic `memoria-durable-opencode`
 - skill backend-specific `memoria-engram-opencode`
 - plugin `plugins/engram-memory-hints.ts`
 - merge del bloque MCP de Engram en `~/.config/opencode/opencode.json` cuando corresponde

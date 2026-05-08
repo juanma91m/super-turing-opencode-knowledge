@@ -114,6 +114,14 @@ run_runtime_installers() {
   esac
 }
 
+apply_agent_autonomy() {
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "Dry-run: se omite parcheo de autonomía de agentes"
+    return 0
+  fi
+  python3 "$REPO_DIR/scripts/manage_agent_autonomy.py" apply --target-dir "$TARGET_DIR"
+}
+
 configure_engram_mcp() {
   local config_path="$TARGET_DIR/opencode.json"
   local engram_bin="${HOME}/.opencode/bin/engram"
@@ -229,6 +237,7 @@ done
 
 run_runtime_installers
 configure_engram_mcp
+apply_agent_autonomy
 validate_config
 
 log "Instalación del addon knowledge finalizada"

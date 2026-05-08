@@ -79,6 +79,12 @@ printf 'managed_files_mismatched=%s\n' "$mismatched"
 printf 'engram_assets_present=%s\n' "$([[ -f "$TARGET_DIR/scripts/install-knowledge-engram.sh" ]] && printf yes || printf no)"
 printf 'qdrant_assets_present=%s\n' "$([[ -f "$TARGET_DIR/scripts/install-knowledge-qdrant.sh" ]] && printf yes || printf no)"
 printf 'engram_memory_hints_plugin_present=%s\n' "$([[ -f "$TARGET_DIR/plugins/engram-memory-hints.ts" ]] && printf yes || printf no)"
+printf 'knowledge_reader_present=%s\n' "$([[ -f "$TARGET_DIR/agents/knowledge-reader.md" ]] && printf yes || printf no)"
+printf 'plan_autonomy_overlay_present=%s\n' "$([[ -f "$TARGET_DIR/agents/plan.md" ]] && printf yes || printf no)"
+printf 'build_autonomy_overlay_present=%s\n' "$([[ -f "$TARGET_DIR/agents/build.md" ]] && printf yes || printf no)"
+printf 'planner_autonomy_augmented=%s\n' "$([[ -f "$TARGET_DIR/agents/planner.md" && $(grep -c 'KNOWLEDGE_AUTONOMY_START' "$TARGET_DIR/agents/planner.md" 2>/dev/null || true) -gt 0 ]] && printf yes || printf no)"
+printf 'master_dev_autonomy_augmented=%s\n' "$([[ -f "$TARGET_DIR/agents/master-dev.md" && $(grep -c 'KNOWLEDGE_AUTONOMY_START' "$TARGET_DIR/agents/master-dev.md" 2>/dev/null || true) -gt 0 ]] && printf yes || printf no)"
+printf 'agent_design_autonomy_augmented=%s\n' "$([[ -f "$TARGET_DIR/agents/agent-design.md" && $(grep -c 'KNOWLEDGE_AUTONOMY_START' "$TARGET_DIR/agents/agent-design.md" 2>/dev/null || true) -gt 0 ]] && printf yes || printf no)"
 
 printf '\n## Engram runtime\n'
 if [[ -f "$TARGET_DIR/scripts/knowledge_status_engram.sh" ]]; then
