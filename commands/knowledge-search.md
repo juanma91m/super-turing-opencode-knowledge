@@ -1,6 +1,6 @@
 ---
 description: Consulta el knowledge layer global por similitud semántica usando el wrapper aprobado.
-agent: planner
+agent: knowledge-curator
 subtask: false
 ---
 Consultá el knowledge layer global de OpenCode.

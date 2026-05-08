@@ -7,6 +7,7 @@
     "PLAYBOOK-KNOWLEDGE-ENGRAM.md",
     "PLAYBOOK-KNOWLEDGE-QDRANT.md",
     "agents/knowledge-curator.md",
+    "commands/memory-init.md",
     "commands/knowledge-index-global.md",
     "commands/knowledge-search.md",
     "commands/knowledge-status.md",
@@ -27,6 +28,7 @@
     "scripts/knowledge_store.py",
     "scripts/knowledge_store.sh",
     "skills/knowledge-governance-opencode/SKILL.md",
+    "skills/memoria-durable-opencode/SKILL.md",
     "skills/memoria-engram-opencode/SKILL.md"
   ],
   "machineLocalState": [

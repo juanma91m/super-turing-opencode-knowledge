@@ -82,7 +82,7 @@ printf 'engram_memory_hints_plugin_present=%s\n' "$([[ -f "$TARGET_DIR/plugins/e
 
 printf '\n## Engram runtime\n'
 if [[ -f "$TARGET_DIR/scripts/knowledge_status_engram.sh" ]]; then
-  bash "$TARGET_DIR/scripts/knowledge_status_engram.sh"
+  bash "$TARGET_DIR/scripts/knowledge_status_engram.sh" --config-dir "$TARGET_DIR"
 else
   printf 'engram_status_script_present=no\n'
 fi

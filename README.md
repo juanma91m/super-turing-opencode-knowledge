@@ -21,9 +21,11 @@ Este repo pasa a ser dueño de:
 - status por componente,
 - wrappers `knowledge_*`,
 - comandos `/knowledge-*`,
+- comando `/memory-init`,
 - `plugins/engram-memory-hints.ts`,
 - `knowledge-curator`,
 - `knowledge-governance-opencode`,
+- `memoria-durable-opencode` como skill backend-agnostic,
 - `memoria-engram-opencode` como skill backend-specific,
 - wiring del MCP de Engram sobre `~/.config/opencode/opencode.json`,
 - playbooks y manifest del knowledge layer,
@@ -62,6 +64,14 @@ bash scripts/install.sh --assets-only
 ```bash
 bash scripts/status.sh
 ```
+
+## Comandos relevantes
+
+- `/memory-init`
+- `/knowledge-index-global`
+- `/knowledge-search <query>`
+- `/knowledge-status`
+- `/knowledge-store-global <path>`
 
 ## Uninstall
 
