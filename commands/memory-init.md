@@ -1,6 +1,6 @@
 ---
 description: Bootstrap memoria durable del repo actual con hallazgos durables y curados.
-agent: planner
+agent: plan
 subtask: false
 ---
 Inicializá la memoria persistida del proyecto actual.

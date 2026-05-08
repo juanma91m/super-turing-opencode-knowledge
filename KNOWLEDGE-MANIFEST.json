@@ -22,14 +22,19 @@
     "scripts/install-knowledge-engram.sh",
     "scripts/install-knowledge-qdrant.sh",
     "scripts/install-knowledge.sh",
+    "scripts/install.sh",
     "scripts/knowledge_env.sh",
     "scripts/knowledge_search.sh",
     "scripts/knowledge_seed_global.sh",
     "scripts/knowledge_status.sh",
     "scripts/knowledge_status_engram.sh",
     "scripts/knowledge_status_qdrant.sh",
+    "scripts/manage_agent_autonomy.py",
+    "scripts/manage_install_marker.py",
     "scripts/knowledge_store.py",
     "scripts/knowledge_store.sh",
+    "scripts/status.sh",
+    "scripts/uninstall.sh",
     "skills/knowledge-governance-opencode/SKILL.md",
     "skills/memoria-durable-opencode/SKILL.md",
     "skills/memoria-engram-opencode/SKILL.md"
@@ -43,6 +48,7 @@
     "este repo agrupa Engram y Qdrant bajo un mismo addon de knowledge, pero mantiene installers y status por componente",
     "la capa de compatibilidad cognitiva con el stack base sigue temporalmente en super-turing-opencode y se desacopla en una fase posterior",
     "install.sh instala por defecto todos los assets del addon y puede bootstrappear solo Engram, solo Qdrant o ambos",
-    "el addon inyecta autonomía conservadora de knowledge en plan/build y la complementa en planner/master-dev/agent-design si esos agentes existen en la instalación activa"
+    "el addon inyecta autonomía conservadora de knowledge en plan/build y la complementa en planner/master-dev/agent-design si esos agentes existen en la instalación activa",
+    "la instalación escribe un marker machine-local .opencode-knowledge-addon.json para troubleshooting y auditoría ligera"
   ]
 }

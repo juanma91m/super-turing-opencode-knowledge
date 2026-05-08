@@ -22,6 +22,15 @@ La escritura automática global queda deliberadamente conservadora:
 - persistir resúmenes durables: sí, cuando el hallazgo es claramente reusable,
 - indexar corpus en Qdrant por reflejo: no.
 
+## Marker de instalación
+
+La instalación escribe `~/.config/opencode/.opencode-knowledge-addon.json` con metadata ligera para troubleshooting:
+
+- versión del addon,
+- modo de instalación,
+- si el MCP de Engram fue gestionado por el addon,
+- y qué agentes opcionales fueron augmentados.
+
 ## Supuesto operativo actual
 
 Este addon asume una instalación base de OpenCode ya funcional, típicamente con `super-turing-opencode` como capa principal en `~/.config/opencode/`.
@@ -48,9 +57,7 @@ Este repo pasa a ser dueño de:
 
 ## Qué NO mueve todavía
 
-La capa de compatibilidad cognitiva sigue temporalmente en `super-turing-opencode`, por ejemplo:
-
-- y el wiring MCP de Engram en el installer base.
+La capa de compatibilidad cognitiva sigue temporalmente en `super-turing-opencode`, por ejemplo el wiring MCP de Engram en el installer base cuando el addon todavía no fue reaplicado tras un reinstall de la base.
 
 Eso se desacopla en una fase posterior.
 
@@ -81,7 +88,7 @@ bash scripts/status.sh
 
 ## Comandos relevantes
 
-- `/memory-init`
+- `/memory-init` (usa `plan` como agente guaranteed del addon)
 - `/knowledge-index-global`
 - `/knowledge-search <query>`
 - `/knowledge-status`

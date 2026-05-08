@@ -44,6 +44,8 @@ bash scripts/install.sh --assets-only
 - skill backend-specific `memoria-engram-opencode`
 - plugin `plugins/engram-memory-hints.ts`
 - merge del bloque MCP de Engram en `~/.config/opencode/opencode.json` cuando corresponde
+- marker `~/.config/opencode/.opencode-knowledge-addon.json` con metadata de instalación y agentes augmentados
+- `/memory-init` queda montado sobre `plan` para no depender de la existencia de `planner`
 - si se pide runtime Engram:
   - `~/.opencode/bin/engram`
   - checkout gestionado de Engram para build/patch

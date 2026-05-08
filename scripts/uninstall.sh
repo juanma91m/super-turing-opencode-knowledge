@@ -83,6 +83,14 @@ else
   python3 "$REPO_DIR/scripts/manage_agent_autonomy.py" remove --target-dir "$TARGET_DIR"
 fi
 
+if [[ -f "$TARGET_DIR/.opencode-knowledge-addon.json" ]]; then
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '[dry-run] python3 %s remove --target-dir %s\n' "$REPO_DIR/scripts/manage_install_marker.py" "$TARGET_DIR"
+  else
+    python3 "$REPO_DIR/scripts/manage_install_marker.py" remove --target-dir "$TARGET_DIR"
+  fi
+fi
+
 for rel_path in "${MANAGED_FILES[@]}"; do
   src="$TARGET_DIR/$rel_path"
   if [[ ! -e "$src" ]]; then

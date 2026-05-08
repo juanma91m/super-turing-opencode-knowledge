@@ -1,6 +1,6 @@
 ---
 description: Verifica el estado local del knowledge layer global por componente (Engram + Qdrant).
-agent: knowledge-curator
+agent: knowledge-reader
 subtask: false
 ---
 Auditá el estado del knowledge layer global.

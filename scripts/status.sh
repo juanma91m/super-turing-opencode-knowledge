@@ -85,6 +85,7 @@ printf 'build_autonomy_overlay_present=%s\n' "$([[ -f "$TARGET_DIR/agents/build.
 printf 'planner_autonomy_augmented=%s\n' "$([[ -f "$TARGET_DIR/agents/planner.md" && $(grep -c 'KNOWLEDGE_AUTONOMY_START' "$TARGET_DIR/agents/planner.md" 2>/dev/null || true) -gt 0 ]] && printf yes || printf no)"
 printf 'master_dev_autonomy_augmented=%s\n' "$([[ -f "$TARGET_DIR/agents/master-dev.md" && $(grep -c 'KNOWLEDGE_AUTONOMY_START' "$TARGET_DIR/agents/master-dev.md" 2>/dev/null || true) -gt 0 ]] && printf yes || printf no)"
 printf 'agent_design_autonomy_augmented=%s\n' "$([[ -f "$TARGET_DIR/agents/agent-design.md" && $(grep -c 'KNOWLEDGE_AUTONOMY_START' "$TARGET_DIR/agents/agent-design.md" 2>/dev/null || true) -gt 0 ]] && printf yes || printf no)"
+printf 'install_marker_present=%s\n' "$([[ -f "$TARGET_DIR/.opencode-knowledge-addon.json" ]] && printf yes || printf no)"
 
 printf '\n## Engram runtime\n'
 if [[ -f "$TARGET_DIR/scripts/knowledge_status_engram.sh" ]]; then
@@ -98,4 +99,18 @@ if [[ -f "$TARGET_DIR/scripts/knowledge_status_qdrant.sh" ]]; then
   bash "$TARGET_DIR/scripts/knowledge_status_qdrant.sh"
 else
   printf 'qdrant_status_script_present=no\n'
+fi
+
+if [[ -f "$TARGET_DIR/.opencode-knowledge-addon.json" ]]; then
+  printf '\n## Install marker\n'
+  python3 - <<'PY' "$TARGET_DIR/.opencode-knowledge-addon.json"
+import json
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+for key in ("addonId", "version", "installedAt", "mode", "assetsOnly", "engramMcpManaged"):
+    print(f"{key}={data.get(key)}")
+print("augmentedAgents=" + ",".join(data.get("augmentedAgents", [])))
+PY
 fi

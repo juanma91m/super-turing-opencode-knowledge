@@ -114,6 +114,18 @@ run_runtime_installers() {
   esac
 }
 
+list_augmented_agents() {
+  local result=()
+  local candidate
+  for candidate in planner master-dev agent-design; do
+    if [[ -f "$TARGET_DIR/agents/$candidate.md" ]] && grep -q 'KNOWLEDGE_AUTONOMY_START' "$TARGET_DIR/agents/$candidate.md" 2>/dev/null; then
+      result+=("$candidate")
+    fi
+  done
+  local IFS=,
+  printf '%s' "${result[*]}"
+}
+
 apply_agent_autonomy() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "Dry-run: se omite parcheo de autonomía de agentes"
@@ -149,6 +161,22 @@ configure_engram_mcp() {
   fi
 
   python3 "$REPO_DIR/scripts/manage_opencode_config.py" apply-engram --config "$config_path" --engram-bin "$engram_bin" --enabled "$enabled"
+}
+
+write_install_marker() {
+  local augmented_agents
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "Dry-run: se omite escritura de marker del addon"
+    return 0
+  fi
+  augmented_agents="$(list_augmented_agents)"
+  python3 "$REPO_DIR/scripts/manage_install_marker.py" write \
+    --target-dir "$TARGET_DIR" \
+    --repo-dir "$REPO_DIR" \
+    --mode "$MODE" \
+    --assets-only "$([[ "$ASSETS_ONLY" -eq 1 ]] && printf true || printf false)" \
+    --engram-mcp-managed "$([[ "$ASSETS_ONLY" -eq 1 || "$MODE" == "qdrant" ]] && printf false || printf true)" \
+    --augmented-agents "$augmented_agents"
 }
 
 validate_config() {
@@ -238,6 +266,7 @@ done
 run_runtime_installers
 configure_engram_mcp
 apply_agent_autonomy
+write_install_marker
 validate_config
 
 log "Instalación del addon knowledge finalizada"
