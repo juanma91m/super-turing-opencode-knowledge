@@ -2,6 +2,14 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_ENV_FILE="$SCRIPT_DIR/knowledge_env.local.sh"
+
+if [[ -f "$LOCAL_ENV_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$LOCAL_ENV_FILE"
+fi
+
 knowledge_home() {
   printf '%s\n' "${OPENCODE_KNOWLEDGE_HOME:-$HOME/.local/share/super-turing-opencode-knowledge}"
 }
@@ -29,9 +37,19 @@ knowledge_python() {
 }
 
 knowledge_script_py() {
-  local script_dir
-  script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-  printf '%s\n' "$script_dir/knowledge_store.py"
+  printf '%s\n' "$SCRIPT_DIR/knowledge_store.py"
+}
+
+knowledge_embedding_backend() {
+  printf '%s\n' "${OPENCODE_KNOWLEDGE_EMBEDDING_BACKEND:-fastembed}"
+}
+
+knowledge_embedding_model() {
+  printf '%s\n' "${OPENCODE_KNOWLEDGE_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
+}
+
+knowledge_ollama_base_url() {
+  printf '%s\n' "${OPENCODE_KNOWLEDGE_OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
 }
 
 knowledge_require_python() {

@@ -67,8 +67,8 @@ if [[ ! -f "$MANIFEST_PATH" ]]; then
   exit 1
 fi
 
-store_script="$HOME/.config/opencode/scripts/knowledge_store.sh"
-if [[ ! -x "$store_script" && ! -f "$store_script" ]]; then
+store_script="$SCRIPT_DIR/knowledge_store.sh"
+if [[ ! -f "$store_script" ]]; then
   printf 'Knowledge wrapper not found: %s\n' "$store_script" >&2
   exit 1
 fi
@@ -89,6 +89,7 @@ while IFS= read -r rel_path || [[ -n "$rel_path" ]]; do
 
   log "Indexing: $rel_path"
   bash "$store_script" store-path \
+    --source-root "$CONFIG_ROOT" \
     --scope "$SCOPE" \
     --project "$PROJECT" \
     --collection "$COLLECTION" \

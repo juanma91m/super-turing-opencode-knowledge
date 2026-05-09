@@ -8,6 +8,8 @@ import json
 import os
 import re
 import sys
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,14 +24,25 @@ except ImportError as exc:  # pragma: no cover - runtime guard
     )
     raise SystemExit(2) from exc
 
+try:
+    from fastembed import TextEmbedding
+except ImportError:  # pragma: no cover - optional dependency at runtime
+    TextEmbedding = None
+
 
 DEFAULT_HOME = Path(
     os.environ.get("OPENCODE_KNOWLEDGE_HOME", "~/.local/share/super-turing-opencode-knowledge")
 ).expanduser()
 DEFAULT_DB_PATH = Path(os.environ.get("QDRANT_LOCAL_PATH", str(DEFAULT_HOME / "qdrant"))).expanduser()
 DEFAULT_COLLECTION = os.environ.get("OPENCODE_KNOWLEDGE_COLLECTION", "global-opencode-knowledge")
+DEFAULT_EMBEDDING_BACKEND = os.environ.get("OPENCODE_KNOWLEDGE_EMBEDDING_BACKEND", "fastembed")
 DEFAULT_EMBEDDING_MODEL = os.environ.get(
     "OPENCODE_KNOWLEDGE_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+)
+DEFAULT_OLLAMA_BASE_URL = os.environ.get("OPENCODE_KNOWLEDGE_OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+DEFAULT_OLLAMA_BATCH_SIZE = max(int(os.environ.get("OPENCODE_KNOWLEDGE_OLLAMA_BATCH_SIZE", "16")), 1)
+DEFAULT_OLLAMA_TIMEOUT_SECONDS = max(
+    int(os.environ.get("OPENCODE_KNOWLEDGE_OLLAMA_TIMEOUT_SECONDS", "300")), 1
 )
 DEFAULT_SCOPE = os.environ.get("OPENCODE_KNOWLEDGE_SCOPE", "global")
 DEFAULT_PROJECT = os.environ.get("OPENCODE_KNOWLEDGE_PROJECT", "opencode-stack")
@@ -62,17 +75,156 @@ def make_client(db_path: Path) -> QdrantClient:
     return QdrantClient(path=str(db_path))
 
 
-def ensure_collection(client: QdrantClient, collection: str, model_name: str) -> None:
+def normalize_embedding_backend(raw: str) -> str:
+    backend = raw.strip().lower()
+    if backend not in {"fastembed", "ollama"}:
+        raise RuntimeError(
+            f"Embedding backend no soportado: {raw}. Valores válidos: fastembed | ollama"
+        )
+    return backend
+
+
+class FastEmbedder:
+    def __init__(self, model_name: str):
+        if TextEmbedding is None:
+            raise RuntimeError(
+                "fastembed no está instalado en el runtime actual. Reinstalá Qdrant con install-knowledge-qdrant.sh"
+            )
+        self.model_name = model_name
+        self._model = TextEmbedding(model_name=model_name)
+        self._size: int | None = None
+
+    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
+        vectors = []
+        for vector in self._model.embed(list(texts)):
+            values = vector.tolist() if hasattr(vector, "tolist") else list(vector)
+            vectors.append([float(item) for item in values])
+        if vectors and self._size is None:
+            self._size = len(vectors[0])
+        return vectors
+
+    def vector_size(self) -> int:
+        if self._size is not None:
+            return self._size
+        probe = self.embed_texts(["knowledge-dimension-probe"])
+        if not probe:
+            raise RuntimeError("fastembed no devolvió embeddings para calcular la dimensión")
+        return len(probe[0])
+
+
+class OllamaEmbedder:
+    def __init__(self, model_name: str, base_url: str):
+        normalized = base_url.rstrip("/")
+        if normalized.endswith("/v1"):
+            normalized = normalized[:-3]
+        self.model_name = model_name
+        self.base_url = normalized
+        self.endpoint = f"{normalized}/api/embed"
+        self.batch_size = DEFAULT_OLLAMA_BATCH_SIZE
+        self.timeout_seconds = DEFAULT_OLLAMA_TIMEOUT_SECONDS
+        self._size: int | None = None
+
+    def _embed_batch(self, texts: Sequence[str]) -> list[list[float]]:
+        payload = json.dumps({"model": self.model_name, "input": list(texts)}).encode("utf-8")
+        request = urllib.request.Request(
+            self.endpoint,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                data = json.load(response)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"Ollama respondió {exc.code} al pedir embeddings en {self.endpoint}: {detail or exc.reason}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"No se pudo conectar a Ollama en {self.endpoint}: {exc.reason or exc}"
+            ) from exc
+        except TimeoutError as exc:
+            raise RuntimeError(
+                f"Ollama agotó el timeout ({self.timeout_seconds}s) al pedir embeddings en {self.endpoint}. Probá con chunks más chicos o aumentando OPENCODE_KNOWLEDGE_OLLAMA_TIMEOUT_SECONDS."
+            ) from exc
+
+        embeddings = data.get("embeddings") or []
+        if not embeddings or not isinstance(embeddings[0], list):
+            raise RuntimeError("Ollama no devolvió un payload de embeddings válido")
+
+        return [[float(item) for item in vector] for vector in embeddings]
+
+    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self.batch_size):
+            batch = texts[start : start + self.batch_size]
+            embedded = self._embed_batch(batch)
+            if len(embedded) != len(batch):
+                raise RuntimeError(
+                    "Ollama devolvió una cantidad inesperada de embeddings para el batch solicitado"
+                )
+            vectors.extend(embedded)
+        if vectors and self._size is None:
+            self._size = len(vectors[0])
+        return vectors
+
+    def vector_size(self) -> int:
+        if self._size is not None:
+            return self._size
+        probe = self.embed_texts(["knowledge-dimension-probe"])
+        if not probe:
+            raise RuntimeError("Ollama no devolvió embeddings para calcular la dimensión")
+        return len(probe[0])
+
+
+def make_embedder(backend: str, model_name: str, ollama_base_url: str):
+    backend_name = normalize_embedding_backend(backend)
+    if backend_name == "ollama":
+        return OllamaEmbedder(model_name, ollama_base_url)
+    return FastEmbedder(model_name)
+
+
+def collection_vector_size(client: QdrantClient, collection: str) -> int | None:
+    info = client.get_collection(collection)
+    vectors = info.config.params.vectors
+    size = getattr(vectors, "size", None)
+    if size is not None:
+        return int(size)
+    if isinstance(vectors, dict) and vectors:
+        first = next(iter(vectors.values()))
+        nested_size = getattr(first, "size", None)
+        if nested_size is not None:
+            return int(nested_size)
+    return None
+
+
+def ensure_collection(client: QdrantClient, collection: str, embedder) -> None:
     collections = {item.name for item in client.get_collections().collections}
+    expected_size = embedder.vector_size()
     if collection in collections:
+        current_size = collection_vector_size(client, collection)
+        if current_size is not None and current_size != expected_size:
+            raise RuntimeError(
+                f"La colección {collection} ya existe con dimensión {current_size}, pero el backend/modelo actual produce {expected_size}. Reindexá o recreá la colección antes de mezclar embeddings."
+            )
         return
 
     client.create_collection(
         collection_name=collection,
-        vectors_config=models.VectorParams(
-            size=client.get_embedding_size(model_name), distance=models.Distance.COSINE
-        ),
+        vectors_config=models.VectorParams(size=expected_size, distance=models.Distance.COSINE),
     )
+
+
+def ensure_existing_collection(client: QdrantClient, collection: str, embedder) -> None:
+    collections = {item.name for item in client.get_collections().collections}
+    if collection not in collections:
+        raise RuntimeError(f"La colección {collection} no existe todavía")
+    current_size = collection_vector_size(client, collection)
+    expected_size = embedder.vector_size()
+    if current_size is not None and current_size != expected_size:
+        raise RuntimeError(
+            f"La colección {collection} tiene dimensión {current_size}, pero el backend/modelo actual produce {expected_size}. Reindexá o recreá la colección antes de consultar."
+        )
 
 
 def stable_id(collection: str, source_id: str, chunk_index: int) -> str:
@@ -88,6 +240,15 @@ def normalize_tags(raw: str | None) -> list[str]:
 
 def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def resolve_relative_path(file_path: Path, *, root_dir: Path, source_root: Path | None) -> str:
+    base = source_root or root_dir
+    try:
+        relative = file_path.relative_to(base)
+    except ValueError:
+        relative = file_path.relative_to(root_dir) if file_path.parent == root_dir else Path(file_path.name)
+    return str(relative).replace(os.sep, "/")
 
 
 def chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
@@ -183,13 +344,15 @@ def upload_chunks(
     *,
     client: QdrantClient,
     collection: str,
-    model_name: str,
+    embedder,
     source_id: str,
     chunks: Sequence[str],
     payload_base: dict[str, object],
 ) -> None:
+    if not chunks:
+        raise RuntimeError("No hay chunks para subir a la colección")
+
     payloads = []
-    vectors = []
     ids = []
     chunk_count = len(chunks)
 
@@ -204,9 +367,11 @@ def upload_chunks(
             }
         )
         payloads.append(payload)
-        vectors.append(models.Document(text=chunk, model=model_name))
         ids.append(stable_id(collection, source_id, chunk_index))
 
+    vectors = embedder.embed_texts(chunks)
+    if len(vectors) != len(chunks):
+        raise RuntimeError("La cantidad de embeddings generados no coincide con la cantidad de chunks")
     client.upload_collection(collection_name=collection, vectors=vectors, payload=payloads, ids=ids)
 
 
@@ -216,8 +381,14 @@ def command_store_path(args: argparse.Namespace) -> int:
         print(f"Path not found: {target_path}", file=sys.stderr)
         return 2
 
+    source_root = Path(args.source_root).expanduser().resolve() if args.source_root else None
+    if source_root is not None and not source_root.exists():
+        print(f"Source root not found: {source_root}", file=sys.stderr)
+        return 2
+
     client = make_client(Path(args.db_path).expanduser())
-    ensure_collection(client, args.collection, args.model)
+    embedder = make_embedder(args.embedding_backend, args.model, args.ollama_base_url)
+    ensure_collection(client, args.collection, embedder)
 
     if target_path.is_file():
         roots = list(iter_source_files(target_path))
@@ -232,8 +403,7 @@ def command_store_path(args: argparse.Namespace) -> int:
 
     stored = 0
     for file_path in roots:
-        relative = file_path.relative_to(root_dir) if file_path != root_dir else file_path.name
-        relative_str = str(relative).replace(os.sep, "/")
+        relative_str = resolve_relative_path(file_path, root_dir=root_dir, source_root=source_root)
         text = load_text(file_path)
         chunks = chunk_text(text, args.chunk_size, args.chunk_overlap)
         if not chunks:
@@ -256,7 +426,7 @@ def command_store_path(args: argparse.Namespace) -> int:
         upload_chunks(
             client=client,
             collection=args.collection,
-            model_name=args.model,
+            embedder=embedder,
             source_id=source_id,
             chunks=chunks,
             payload_base=payload,
@@ -288,13 +458,18 @@ def command_store_text(args: argparse.Namespace) -> int:
         return 2
 
     client = make_client(Path(args.db_path).expanduser())
-    ensure_collection(client, args.collection, args.model)
+    embedder = make_embedder(args.embedding_backend, args.model, args.ollama_base_url)
+    ensure_collection(client, args.collection, embedder)
 
     source_id = args.source_id or f"{args.project}:{slugify(args.title)}"
     if args.replace_source:
         delete_existing_source(client, args.collection, args.scope, args.project, source_id)
 
     chunks = chunk_text(text, args.chunk_size, args.chunk_overlap)
+    if not chunks:
+        print("El texto provisto está vacío o contiene solo whitespace", file=sys.stderr)
+        return 2
+
     payload = base_payload(
         scope=args.scope,
         project=args.project,
@@ -308,7 +483,7 @@ def command_store_text(args: argparse.Namespace) -> int:
     upload_chunks(
         client=client,
         collection=args.collection,
-        model_name=args.model,
+        embedder=embedder,
         source_id=source_id,
         chunks=chunks,
         payload_base=payload,
@@ -338,10 +513,13 @@ def slugify(value: str) -> str:
 
 def command_search(args: argparse.Namespace) -> int:
     client = make_client(Path(args.db_path).expanduser())
+    embedder = make_embedder(args.embedding_backend, args.model, args.ollama_base_url)
+    ensure_existing_collection(client, args.collection, embedder)
     query_filter = build_filter(scope=args.scope, project=args.project, source_id=args.source_id)
+    query_vector = embedder.embed_texts([args.query])[0]
     results = client.query_points(
         collection_name=args.collection,
-        query=models.Document(text=args.query, model=args.model),
+        query=query_vector,
         query_filter=query_filter,
         limit=args.limit,
         with_payload=True,
@@ -387,6 +565,8 @@ def command_search(args: argparse.Namespace) -> int:
 
 def command_status(args: argparse.Namespace) -> int:
     client = make_client(Path(args.db_path).expanduser())
+    embedder = make_embedder(args.embedding_backend, args.model, args.ollama_base_url)
+    vector_size = embedder.vector_size()
     collections = []
     for item in client.get_collections().collections:
         name = item.name
@@ -401,9 +581,13 @@ def command_status(args: argparse.Namespace) -> int:
         "knowledge_home": str(DEFAULT_HOME),
         "qdrant_local_path": str(args.db_path),
         "default_collection": args.collection,
+        "embedding_backend": normalize_embedding_backend(args.embedding_backend),
         "embedding_model": args.model,
+        "embedding_vector_size": vector_size,
         "collections": collections,
     }
+    if normalize_embedding_backend(args.embedding_backend) == "ollama":
+        payload["ollama_base_url"] = args.ollama_base_url.rstrip("/")
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
 
@@ -416,11 +600,14 @@ def build_parser() -> argparse.ArgumentParser:
     def add_common_options(target: argparse.ArgumentParser) -> None:
         target.add_argument("--db-path", default=str(DEFAULT_DB_PATH))
         target.add_argument("--collection", default=DEFAULT_COLLECTION)
+        target.add_argument("--embedding-backend", default=DEFAULT_EMBEDDING_BACKEND)
         target.add_argument("--model", default=DEFAULT_EMBEDDING_MODEL)
+        target.add_argument("--ollama-base-url", default=DEFAULT_OLLAMA_BASE_URL)
 
     store_path = subparsers.add_parser("store-path", help="Index one file or all supported files under a directory")
     add_common_options(store_path)
     store_path.add_argument("--path", required=True)
+    store_path.add_argument("--source-root")
     store_path.add_argument("--scope", default=DEFAULT_SCOPE)
     store_path.add_argument("--project", default=DEFAULT_PROJECT)
     store_path.add_argument("--source-type", default="document")
@@ -468,7 +655,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

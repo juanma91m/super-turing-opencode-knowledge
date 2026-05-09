@@ -27,7 +27,7 @@ EOF
 }
 
 log() {
-  printf '[knowledge-engram-install] %s\n' "$*"
+  printf '[knowledge-engram-install] %s\n' "$*" >&2
 }
 
 run() {
@@ -51,7 +51,7 @@ detect_go_bin() {
 }
 
 install_go_local() {
-  local os arch url tmpdir parent_dir
+  local os arch url tmpdir="" parent_dir
 
   if [[ "$SKIP_GO_INSTALL" -eq 1 ]]; then
     printf 'Go not found and --skip-go-install was set\n' >&2
@@ -76,7 +76,7 @@ install_go_local() {
   fi
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' RETURN
+  trap '[[ -n "${tmpdir:-}" ]] && rm -rf "$tmpdir"' RETURN
   parent_dir="$(dirname "$GO_INSTALL_ROOT")"
   url="https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
 
@@ -134,7 +134,7 @@ apply_patch_if_needed() {
 
 build_engram() {
   local go_bin="$1"
-  local tmp_bin
+  local tmp_bin=""
   run mkdir -p "$(dirname "$ENGRAM_BIN")"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "Dry-run: would build Engram with $go_bin into $ENGRAM_BIN"
@@ -143,7 +143,7 @@ build_engram() {
 
   log "Building Engram into $ENGRAM_BIN"
   tmp_bin="$(mktemp "${ENGRAM_BIN}.tmp.XXXXXX")"
-  trap 'rm -f "$tmp_bin"' RETURN
+  trap '[[ -n "${tmp_bin:-}" ]] && rm -f "$tmp_bin"' RETURN
   (cd "$ENGRAM_SRC_DIR" && "$go_bin" build -o "$tmp_bin" ./cmd/engram)
   mv "$tmp_bin" "$ENGRAM_BIN"
 }

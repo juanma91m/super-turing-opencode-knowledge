@@ -24,7 +24,41 @@
 
 - sin daemon,
 - Qdrant local file-based vía `QDRANT_LOCAL_PATH`,
+- backend de embeddings configurable: `fastembed` local o `ollama`,
 - estado local por defecto en `~/.local/share/super-turing-opencode-knowledge/`.
+
+## Backend de embeddings
+
+### Default genérico
+
+- backend: `fastembed`
+- modelo por defecto: `sentence-transformers/all-MiniLM-L6-v2`
+
+### Override local con Ollama
+
+Si querés que el knowledge layer use un modelo de embeddings servido por Ollama, creá un override machine-local en:
+
+```bash
+~/.config/opencode/scripts/knowledge_env.local.sh
+```
+
+Ejemplo:
+
+```bash
+export OPENCODE_KNOWLEDGE_EMBEDDING_BACKEND=ollama
+export OPENCODE_KNOWLEDGE_EMBEDDING_MODEL=snowflake-arctic-embed2:latest
+export OPENCODE_KNOWLEDGE_OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
+
+Los wrappers `knowledge_store.sh`, `knowledge_search.sh` y `knowledge_status_qdrant.sh` van a heredar ese override automáticamente.
+
+### Cambio de modelo = reindexado
+
+Si cambiás de modelo/backend de embeddings, **no mezcles vectores viejos y nuevos en la misma colección**.
+
+- si la colección existente fue indexada con otra dimensión o semántica, hay que recrearla,
+- Qdrant en este layer se trata como corpus **regenerable**, no como storage durable inmutable,
+- después de recrear la colección, reindexá con `knowledge_seed_global.sh` o el seed del proyecto.
 
 ## Instalación
 
