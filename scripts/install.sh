@@ -85,6 +85,19 @@ copy_file() {
   run cp "$src" "$dst"
 }
 
+ensure_primary_agent_templates() {
+  local rel_path src dst
+  for rel_path in agents/plan.md agents/build.md; do
+    src="$REPO_DIR/$rel_path"
+    dst="$TARGET_DIR/$rel_path"
+    if [[ -e "$dst" ]]; then
+      continue
+    fi
+    run mkdir -p "$(dirname "$dst")"
+    run cp "$src" "$dst"
+  done
+}
+
 run_runtime_installers() {
   if [[ "$ASSETS_ONLY" -eq 1 ]]; then
     log "Assets copiados; se omite bootstrap runtime por --assets-only"
@@ -263,6 +276,7 @@ for rel_path in "${MANAGED_FILES[@]}"; do
   copy_file "$rel_path"
 done
 
+ensure_primary_agent_templates
 run_runtime_installers
 configure_engram_mcp
 apply_agent_autonomy

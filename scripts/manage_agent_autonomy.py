@@ -5,7 +5,25 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-OPTIONAL_AGENT_RULES = {
+AGENT_RULES = {
+    "plan": {
+        "task_target": "knowledge-reader",
+        "block": """
+## Knowledge autonomy (addon)
+- si el problema probablemente tenga antecedentes relevantes, consultá primero `knowledge-reader`,
+- si `mem_*` está disponible y el análisis deja una decisión o descarte claramente durable, guardá un resumen curado breve,
+- mantené escritura conservadora: no indexar corpus ni guardar memoria por reflejo.
+""".strip(),
+    },
+    "build": {
+        "task_target": "knowledge-reader",
+        "block": """
+## Knowledge autonomy (addon)
+- si el cambio parece tener antecedentes o conocimiento reusable, consultá primero `knowledge-reader`,
+- si al cerrar el trabajo aparece una decisión, bugfix o aprendizaje durable, guardá un resumen breve con `mem_save` si el backend está disponible,
+- mantené escritura conservadora: no curar Qdrant automáticamente ni guardar memoria por cada microiteración.
+""".strip(),
+    },
     "planner": {
         "task_target": "knowledge-reader",
         "block": """
@@ -67,6 +85,23 @@ def patch_task(frontmatter: str, task_target: str) -> str:
                 insert_at += 1
             lines.insert(insert_at, f"{indent}  {task_target}: allow  {TASK_COMMENT}")
             return "\n".join(lines)
+
+    for index, line in enumerate(lines):
+        if line.strip() != "permission:":
+            continue
+        indent = line[: len(line) - len(line.lstrip())]
+        insert_at = index + 1
+        while insert_at < len(lines):
+            candidate = lines[insert_at]
+            if candidate.strip() and not candidate.startswith(indent + "  "):
+                break
+            insert_at += 1
+        lines[insert_at:insert_at] = [
+            f"{indent}  task:  {TASK_COMMENT}",
+            f'{indent}    "*": deny  {TASK_COMMENT}',
+            f"{indent}    {task_target}: allow  {TASK_COMMENT}",
+        ]
+        return "\n".join(lines)
 
     return frontmatter
 
@@ -135,7 +170,7 @@ def main() -> int:
     target_dir = Path(args.target_dir).expanduser()
     agents_dir = target_dir / "agents"
 
-    for agent_name, rule in OPTIONAL_AGENT_RULES.items():
+    for agent_name, rule in AGENT_RULES.items():
         path = agents_dir / f"{agent_name}.md"
         if not path.exists():
             continue
