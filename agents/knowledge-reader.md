@@ -2,7 +2,9 @@
 description: Recupera contexto durable y corpus recuperable del addon knowledge sin escribir ni modificar estado.
 mode: subagent
 model: openai/gpt-5.4
-variant: xhigh
+tools:
+  "playwright_*": false
+  "stitch_*": false
 permission:
   edit: deny
   bash:
