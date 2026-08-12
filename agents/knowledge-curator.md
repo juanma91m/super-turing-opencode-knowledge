@@ -1,7 +1,8 @@
 ---
 description: Cura corpus de conocimiento recuperable con gobernanza explicita sobre Engram y Qdrant.
 mode: subagent
-model: openai/gpt-5.4
+model: openai/gpt-5.6-sol
+variant: medium
 tools:
   "playwright_*": false
   "stitch_*": false
