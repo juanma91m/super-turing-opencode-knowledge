@@ -563,6 +563,73 @@ def command_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_inventory(args: argparse.Namespace) -> int:
+    client = make_client(Path(args.db_path).expanduser())
+    collections = {item.name for item in client.get_collections().collections}
+    if args.collection not in collections:
+        raise RuntimeError(f"La colección {args.collection} no existe todavía")
+
+    query_filter = build_filter(scope=args.scope, project=args.project, source_id=args.source_id)
+    sources: dict[str, dict[str, object]] = {}
+    offset = None
+
+    while True:
+        points, offset = client.scroll(
+            collection_name=args.collection,
+            scroll_filter=query_filter,
+            limit=256,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        for point in points:
+            payload = point.payload or {}
+            source_id = str(payload.get("source_id") or "(sin source_id)")
+            current = sources.setdefault(
+                source_id,
+                {
+                    "source_id": source_id,
+                    "scope": payload.get("scope"),
+                    "project": payload.get("project"),
+                    "source_type": payload.get("source_type"),
+                    "title": payload.get("title"),
+                    "source_path": payload.get("source_path"),
+                    "ingested_at": payload.get("ingested_at"),
+                    "chunks": 0,
+                },
+            )
+            current["chunks"] = int(current["chunks"]) + 1
+            ingested_at = payload.get("ingested_at")
+            if ingested_at and str(ingested_at) > str(current.get("ingested_at") or ""):
+                current["ingested_at"] = ingested_at
+        if offset is None:
+            break
+
+    ordered = sorted(sources.values(), key=lambda item: str(item["source_id"]))
+    result = {
+        "status": "ok",
+        "collection": args.collection,
+        "source_count": len(ordered),
+        "chunk_count": sum(int(item["chunks"]) for item in ordered),
+        "sources": ordered,
+    }
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+def command_delete_collection(args: argparse.Namespace) -> int:
+    if not args.confirm:
+        raise RuntimeError("delete-collection requiere --confirm")
+    client = make_client(Path(args.db_path).expanduser())
+    collections = {item.name for item in client.get_collections().collections}
+    if args.collection not in collections:
+        print(json.dumps({"status": "ok", "collection": args.collection, "deleted": False}, indent=2))
+        return 0
+    client.delete_collection(collection_name=args.collection)
+    print(json.dumps({"status": "ok", "collection": args.collection, "deleted": True}, indent=2))
+    return 0
+
+
 def command_status(args: argparse.Namespace) -> int:
     client = make_client(Path(args.db_path).expanduser())
     embedder = make_embedder(args.embedding_backend, args.model, args.ollama_base_url)
@@ -644,6 +711,20 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--score-threshold", type=float)
     search.add_argument("--json", action="store_true")
     search.set_defaults(func=command_search)
+
+    inventory = subparsers.add_parser("inventory", help="List sources and chunk counts in one collection")
+    add_common_options(inventory)
+    inventory.add_argument("--scope")
+    inventory.add_argument("--project")
+    inventory.add_argument("--source-id")
+    inventory.set_defaults(func=command_inventory)
+
+    delete_collection = subparsers.add_parser(
+        "delete-collection", help="Delete one regenerable collection before a governed rebuild"
+    )
+    add_common_options(delete_collection)
+    delete_collection.add_argument("--confirm", action="store_true")
+    delete_collection.set_defaults(func=command_delete_collection)
 
     status = subparsers.add_parser("status", help="Show local knowledge layer readiness")
     add_common_options(status)

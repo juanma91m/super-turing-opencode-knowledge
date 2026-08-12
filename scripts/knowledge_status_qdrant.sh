@@ -16,4 +16,4 @@ export OPENCODE_KNOWLEDGE_OLLAMA_BASE_URL="${OPENCODE_KNOWLEDGE_OLLAMA_BASE_URL:
 
 mkdir -p "$(dirname "$lock_file")"
 
-exec flock -s "$lock_file" "$python_bin" "$script_py" status "$@"
+exec flock -x "$lock_file" "$python_bin" "$script_py" status "$@"

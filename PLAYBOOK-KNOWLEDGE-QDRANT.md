@@ -92,6 +92,17 @@ bash ~/.config/opencode/scripts/knowledge_status.sh
 - escritura gobernada:
   - `bash ~/.config/opencode/scripts/knowledge_store.sh ...`
   - `bash ~/.config/opencode/scripts/knowledge_seed_global.sh ...`
+  - `bash ~/.config/opencode/scripts/knowledge_rebuild_collection.sh --collection <nombre>` para borrar una colección regenerable antes de un rebuild explícito
+- inventario:
+  - `bash ~/.config/opencode/scripts/knowledge_inventory.sh --collection <nombre>`
+
+## Rebuild gobernado
+
+- usar rebuild cuando hay fuentes retiradas, colisiones antiguas de `source_id`, secretos indexados o cambio de modelo,
+- borrar solo una colección conocida y regenerable con el wrapper explícito,
+- resembrar inmediatamente desde un manifest curado y versionado,
+- validar inventario, conteos, queries representativas y ausencia de contenido sensible,
+- no usar el wrapper como limpieza genérica ni sobre una colección sin source-of-truth reproducible.
 
 ## Contrato con el stack base
 

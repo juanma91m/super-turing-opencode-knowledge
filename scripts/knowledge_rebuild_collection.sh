@@ -6,14 +6,9 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/knowledge_env.sh"
 
-if [[ "$#" -eq 0 ]]; then
-  printf 'Uso: knowledge_search.sh --query "texto" [filtros]\n' >&2
+if [[ "$#" -ne 2 || "$1" != "--collection" ]]; then
+  printf 'Uso: knowledge_rebuild_collection.sh --collection <nombre>\n' >&2
   exit 2
-fi
-
-args=("$@")
-if [[ "$1" != --* ]]; then
-  args=(--query "$*")
 fi
 
 python_bin="$(knowledge_require_python)"
@@ -25,5 +20,4 @@ export OPENCODE_KNOWLEDGE_EMBEDDING_MODEL="${OPENCODE_KNOWLEDGE_EMBEDDING_MODEL:
 export OPENCODE_KNOWLEDGE_OLLAMA_BASE_URL="${OPENCODE_KNOWLEDGE_OLLAMA_BASE_URL:-$(knowledge_ollama_base_url)}"
 
 mkdir -p "$(dirname "$lock_file")"
-
-exec flock -x "$lock_file" "$python_bin" "$script_py" search "${args[@]}"
+exec flock -x "$lock_file" "$python_bin" "$script_py" delete-collection --collection "$2" --confirm

@@ -21,6 +21,8 @@
     "scripts/install-knowledge-qdrant.sh",
     "scripts/install-knowledge.sh",
     "scripts/knowledge_env.sh",
+    "scripts/knowledge_inventory.sh",
+    "scripts/knowledge_rebuild_collection.sh",
     "scripts/knowledge_search.sh",
     "scripts/knowledge_seed_global.sh",
     "scripts/knowledge_status.sh",

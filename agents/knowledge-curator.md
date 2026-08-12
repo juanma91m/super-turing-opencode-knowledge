@@ -14,6 +14,7 @@ permission:
     "bash ~/.config/opencode/scripts/knowledge_store.sh*": allow
     "bash ~/.config/opencode/scripts/knowledge_search.sh*": allow
     "bash ~/.config/opencode/scripts/knowledge_status.sh*": allow
+    "bash ~/.config/opencode/scripts/knowledge_inventory.sh*": allow
   task:
     "*": deny
 ---
@@ -37,7 +38,8 @@ Modo de trabajo:
 - responder en el mismo idioma del usuario y no cambiar de idioma salvo pedido explícito o necesidad real de traducir o citar contenido,
 - usar `knowledge-governance-opencode` para decidir colección, metadata y política de escritura,
 - antes de escribir, verificar si el material es realmente apto para retrieval y no solo para memoria curada,
-- usar únicamente `bash ~/.config/opencode/scripts/knowledge_store.sh ...` o `knowledge_seed_global.sh` para persistir y `knowledge_search.sh` / `knowledge_status.sh` para validar,
+- usar únicamente `bash ~/.config/opencode/scripts/knowledge_store.sh ...` o `knowledge_seed_global.sh` para persistir y `knowledge_search.sh` / `knowledge_status.sh` / `knowledge_inventory.sh` para validar,
+- tratar `knowledge_rebuild_collection.sh` como operación destructiva de operador: no ejecutarla salvo pedido explícito del usuario y confirmación del rebuild/reseed,
 - si falta metadata clave para gobernanza, pedirla o explicitar el supuesto antes de escribir,
 - cuando el pedido sea global, priorizar colecciones globales; no mezclar detalles de un repo concreto dentro del corpus global.
 
