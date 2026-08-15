@@ -55,6 +55,11 @@ Este repo pasa a ser dueño de:
 - playbooks y manifest del knowledge layer,
 - patch versionado de Engram.
 
+Engram no se mantiene como fork funcional independiente: el addon fija un commit
+upstream exacto, aplica `patches/engram-source-agent.patch` y construye el binario
+local. El checkout en `~/.local/src/engram-opencode-stack` es estado gestionado de
+build, no el source of truth del cambio.
+
 ## Qué NO mueve todavía
 
 La capa de compatibilidad cognitiva sigue temporalmente en `super-turing-opencode`, por ejemplo el wiring MCP de Engram en el installer base cuando el addon todavía no fue reaplicado tras un reinstall de la base.

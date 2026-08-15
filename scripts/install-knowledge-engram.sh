@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 KNOWLEDGE_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 ENGRAM_REPO_URL="https://github.com/Gentleman-Programming/engram.git"
-ENGRAM_REF="64bf163d0b9b8533c4b5c9a2566db8464f75eac3"
+ENGRAM_REF="1dafc0f63051b2214100f7bd801357e4aab61c26"
 ENGRAM_SRC_DIR="${HOME}/.local/src/engram-opencode-stack"
 ENGRAM_BIN="${HOME}/.opencode/bin/engram"
 GO_INSTALL_ROOT="${HOME}/.local/opt/go"
@@ -180,6 +180,7 @@ done
 
 GO_BIN="$(ensure_go_bin)"
 log "Using Go binary: $GO_BIN"
+log "Using pinned Engram ref: $ENGRAM_REF"
 prepare_checkout
 apply_patch_if_needed
 build_engram "$GO_BIN"

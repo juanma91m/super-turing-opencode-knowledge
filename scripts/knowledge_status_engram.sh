@@ -2,10 +2,14 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+KNOWLEDGE_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+ENGRAM_EXPECTED_REF="1dafc0f63051b2214100f7bd801357e4aab61c26"
 ENGRAM_BIN="${HOME}/.opencode/bin/engram"
 ENGRAM_DB="${HOME}/.engram/engram.db"
 ENGRAM_SRC_DIR="${HOME}/.local/src/engram-opencode-stack"
 CONFIG_DIR="${HOME}/.config/opencode"
+PATCH_FILE="$KNOWLEDGE_DIR/patches/engram-source-agent.patch"
 
 usage() {
   cat <<'EOF'
@@ -79,4 +83,28 @@ printf 'engram_db=%s\n' "$ENGRAM_DB"
 printf 'engram_db_present=%s\n' "$([[ -f "$ENGRAM_DB" ]] && printf yes || printf no)"
 printf 'engram_src_dir=%s\n' "$ENGRAM_SRC_DIR"
 printf 'engram_src_dir_present=%s\n' "$([[ -d "$ENGRAM_SRC_DIR/.git" ]] && printf yes || printf no)"
+printf 'engram_expected_ref=%s\n' "$ENGRAM_EXPECTED_REF"
+if [[ -d "$ENGRAM_SRC_DIR/.git" ]]; then
+  actual_ref="$(git -C "$ENGRAM_SRC_DIR" rev-parse HEAD 2>/dev/null || true)"
+  printf 'engram_actual_ref=%s\n' "${actual_ref:-unknown}"
+  printf 'engram_ref_matches=%s\n' "$([[ "$actual_ref" == "$ENGRAM_EXPECTED_REF" ]] && printf yes || printf no)"
+  if [[ -f "$PATCH_FILE" ]] && git -C "$ENGRAM_SRC_DIR" apply --reverse --check "$PATCH_FILE" >/dev/null 2>&1; then
+    printf 'engram_patch_applied=yes\n'
+  elif [[ -f "$PATCH_FILE" ]]; then
+    printf 'engram_patch_applied=no\n'
+  else
+    printf 'engram_patch_applied=unknown\n'
+  fi
+else
+  printf 'engram_actual_ref=unknown\n'
+  printf 'engram_ref_matches=unknown\n'
+  printf 'engram_patch_applied=unknown\n'
+fi
+if [[ -x "$ENGRAM_BIN" ]]; then
+  version_output="$("$ENGRAM_BIN" --version 2>/dev/null || true)"
+  version_output="${version_output##*$'\n'}"
+  printf 'engram_version=%s\n' "${version_output:-unknown}"
+else
+  printf 'engram_version=unknown\n'
+fi
 printf 'engram_mcp_enabled=%s\n' "$mcp_enabled"

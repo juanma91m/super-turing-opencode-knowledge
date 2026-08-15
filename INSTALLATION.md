@@ -48,7 +48,7 @@ bash scripts/install.sh --assets-only
 - `/memory-init` queda montado sobre `plan` para no depender de la existencia de `planner`
 - si se pide runtime Engram:
   - `~/.opencode/bin/engram`
-  - checkout gestionado de Engram para build/patch
+  - checkout gestionado de Engram para build/patch, reseteado al ref upstream fijado por el addon
 - si se pide runtime Qdrant:
   - `~/.local/share/super-turing-opencode-knowledge/`
   - virtualenv local con `qdrant-client[fastembed]`
@@ -58,6 +58,10 @@ bash scripts/install.sh --assets-only
 ```bash
 bash scripts/status.sh
 ```
+
+El status de Engram también informa el ref esperado/actual y si el patch
+versionado está aplicado, para distinguir drift real del working tree sucio
+esperado por el patch.
 
 ## Interacción con el stack base
 
