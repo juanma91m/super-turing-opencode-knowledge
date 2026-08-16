@@ -42,6 +42,21 @@ bash ~/.config/opencode/scripts/install-engram.sh
 bash ~/.config/opencode/scripts/knowledge_status_engram.sh
 ```
 
+## Réplica Cloud opcional
+
+Cada PC conserva SQLite local y puede sincronizar una allowlist explícita de
+proyectos contra Engram Cloud:
+
+```bash
+~/.config/opencode/scripts/knowledge-push
+~/.config/opencode/scripts/knowledge-pull
+~/.config/opencode/scripts/knowledge-sync
+~/.config/opencode/scripts/knowledge-sync-status
+```
+
+El servidor, bootstrap seguro y timer horario están documentados en
+[`PLAYBOOK-KNOWLEDGE-CLOUD.md`](./PLAYBOOK-KNOWLEDGE-CLOUD.md).
+
 ## Contrato con el stack base
 
 - el stack base sigue decidiendo **cuándo** consultar memoria,

@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../systemd" && pwd)"
+TARGET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SERVICE="opencode-knowledge-sync.service"
+TIMER="opencode-knowledge-sync.timer"
+ACTION="${1:-status}"
+
+usage() {
+  cat <<'EOF'
+Usage: knowledge-sync-timer <install|enable|disable|status|uninstall>
+
+  install     Copy user units and reload systemd; does not enable the timer
+  enable      Install if needed, then enable and start the hourly timer
+  disable     Disable and stop the timer, preserving unit files
+  status      Show timer/service status and recent runs
+  uninstall   Disable timer and remove only addon-owned user units
+EOF
+}
+
+require_systemd_user() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    printf 'systemctl is required\n' >&2
+    exit 1
+  fi
+  systemctl --user show-environment >/dev/null
+}
+
+install_units() {
+  mkdir -p "$TARGET_DIR"
+  install -m 0644 "$SOURCE_DIR/$SERVICE" "$TARGET_DIR/$SERVICE"
+  install -m 0644 "$SOURCE_DIR/$TIMER" "$TARGET_DIR/$TIMER"
+  systemctl --user daemon-reload
+  printf 'Installed user units in %s; timer remains disabled until `enable`.\n' "$TARGET_DIR"
+}
+
+require_systemd_user
+case "$ACTION" in
+  install)
+    install_units
+    ;;
+  enable)
+    if [[ ! -f "$TARGET_DIR/$SERVICE" || ! -f "$TARGET_DIR/$TIMER" ]]; then
+      install_units
+    fi
+    if [[ ! -f "$HOME/.config/opencode/knowledge-sync.conf" ]]; then
+      printf 'Missing client config: %s\n' "$HOME/.config/opencode/knowledge-sync.conf" >&2
+      exit 1
+    fi
+    systemctl --user enable --now "$TIMER"
+    systemctl --user list-timers "$TIMER" --no-pager
+    ;;
+  disable)
+    systemctl --user disable --now "$TIMER" 2>/dev/null || true
+    ;;
+  status)
+    systemctl --user list-timers "$TIMER" --all --no-pager || true
+    systemctl --user status "$TIMER" "$SERVICE" --no-pager || true
+    ;;
+  uninstall)
+    systemctl --user disable --now "$TIMER" 2>/dev/null || true
+    rm -f "$TARGET_DIR/$SERVICE" "$TARGET_DIR/$TIMER"
+    systemctl --user daemon-reload
+    printf 'Removed addon-owned user units; client config and sync state were preserved.\n'
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    printf 'Unknown action: %s\n' "$ACTION" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

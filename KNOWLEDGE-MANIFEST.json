@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
   "name": "super-turing-opencode-knowledge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "managedFiles": [
     "PLAYBOOK-KNOWLEDGE.md",
     "PLAYBOOK-KNOWLEDGE-ENGRAM.md",
     "PLAYBOOK-KNOWLEDGE-QDRANT.md",
     "PLAYBOOK-KNOWLEDGE-BACKUP.md",
+    "PLAYBOOK-KNOWLEDGE-CLOUD.md",
     "agents/knowledge-reader.md",
     "agents/knowledge-curator.md",
     "commands/memory-init.md",
@@ -15,6 +16,7 @@
     "commands/knowledge-status.md",
     "commands/knowledge-store-global.md",
     "knowledge/global_seed_paths.txt",
+    "knowledge/knowledge-sync.conf.example",
     "patches/engram-source-agent.patch",
     "plugins/engram-memory-hints.ts",
     "scripts/install-engram.sh",
@@ -27,6 +29,12 @@
     "scripts/knowledge_inventory.sh",
     "scripts/knowledge_rebuild_collection.sh",
     "scripts/knowledge_restore.sh",
+    "scripts/knowledge-pull",
+    "scripts/knowledge-push",
+    "scripts/knowledge-sync",
+    "scripts/knowledge-sync-status",
+    "scripts/knowledge-sync-timer",
+    "scripts/knowledge_sync.py",
     "scripts/knowledge_search.sh",
     "scripts/knowledge_seed_global.sh",
     "scripts/knowledge_status.sh",
@@ -36,12 +44,17 @@
     "scripts/knowledge_store.sh",
     "skills/knowledge-governance-opencode/SKILL.md",
     "skills/memoria-durable-opencode/SKILL.md",
-    "skills/memoria-engram-opencode/SKILL.md"
+    "skills/memoria-engram-opencode/SKILL.md",
+    "systemd/opencode-knowledge-sync.service",
+    "systemd/opencode-knowledge-sync.timer"
   ],
   "machineLocalState": [
     "~/.opencode/bin/engram",
     "~/.engram/engram.db",
-    "~/.local/share/super-turing-opencode-knowledge/"
+    "~/.local/share/super-turing-opencode-knowledge/",
+    "~/.config/opencode/knowledge-sync.conf",
+    "~/.config/systemd/user/opencode-knowledge-sync.service",
+    "~/.config/systemd/user/opencode-knowledge-sync.timer"
   ],
   "notes": [
     "este repo agrupa Engram y Qdrant bajo un mismo addon de knowledge, pero mantiene installers y status por componente",
@@ -51,6 +64,8 @@
     "el addon inyecta autonomía conservadora de knowledge en plan/build y la complementa en planner/master-dev/agent-design si esos agentes existen en la instalación activa",
     "knowledge_backup.sh genera un archivo portable con backup SQLite consistente, export lógico de Engram, Qdrant local sin locks efímeros, checksums y manifest de compatibilidad",
     "knowledge_restore.sh exige confirmación, rechaza archivos inseguros o incompatibles y conserva rollback local antes de reemplazar estado",
-    "la instalación escribe un marker machine-local .opencode-knowledge-addon.json para troubleshooting y auditoría ligera"
+    "la instalación escribe un marker machine-local .opencode-knowledge-addon.json para troubleshooting y auditoría ligera",
+    "Engram Cloud es una réplica opcional: cada cliente conserva SQLite local y sincroniza por proyecto mediante wrappers manuales o un timer systemd user",
+    "el deployment server/ construye Engram desde el mismo ref y patch gestionados, usa PostgreSQL 16 aislado y no publica Postgres"
   ]
 }

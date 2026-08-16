@@ -1,0 +1,11 @@
+# Copy to ~/.config/opencode/knowledge-sync.conf and run: chmod 600 <file>
+# Values are parsed as data; shell expressions are not evaluated.
+OPENCODE_KNOWLEDGE_CLOUD_SERVER=https://engram-cloud.example.internal:18080
+OPENCODE_KNOWLEDGE_CLOUD_TOKEN=replace-with-the-server-sync-token
+OPENCODE_KNOWLEDGE_CLOUD_PROJECTS=replace-with-one-or-more-existing-projects
+OPENCODE_KNOWLEDGE_CLOUD_TIMEOUT_SECONDS=30
+
+# Optional overrides:
+# OPENCODE_KNOWLEDGE_ENGRAM_BIN=/home/user/.opencode/bin/engram
+# OPENCODE_KNOWLEDGE_ENGRAM_DATA_DIR=/home/user/.engram
+# OPENCODE_KNOWLEDGE_HOME=/home/user/.local/share/super-turing-opencode-knowledge

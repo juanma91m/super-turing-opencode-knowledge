@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- agrega deployment reproducible Engram Cloud + PostgreSQL 16 sin compartir el SQLite cliente,
+- agrega wrappers `knowledge-push`, `knowledge-pull`, `knowledge-sync` y status agregado por proyecto,
+- agrega configuración machine-local, lock de concurrencia y timer `systemd --user` horario,
+- documenta bootstrap conservador, operación offline y backup/restore separado de PostgreSQL.
+
 ## [Unreleased]
 
 ### Added

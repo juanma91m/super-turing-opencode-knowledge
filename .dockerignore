@@ -1,0 +1,9 @@
+.git
+.gitignore
+server/.env
+server/backups
+.knowledge-addon-backups
+opencode-knowledge-backup-*.tar.gz
+__pycache__
+**/__pycache__
+tests

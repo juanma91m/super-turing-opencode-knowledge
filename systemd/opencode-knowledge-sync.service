@@ -1,0 +1,14 @@
+[Unit]
+Description=Synchronize local OpenCode knowledge with Engram Cloud
+Documentation=file://%h/.config/opencode/PLAYBOOK-KNOWLEDGE-CLOUD.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=ENGRAM_CLOUD_AUTOSYNC=0
+ExecStart=/usr/bin/env bash %h/.config/opencode/scripts/knowledge-sync
+TimeoutStartSec=45min
+SuccessExitStatus=75
+Nice=10
+IOSchedulingClass=idle

@@ -115,6 +115,19 @@ bash scripts/knowledge_restore.sh \
 
 El archivo contiene memoria y payloads potencialmente sensibles; no incluye secrets de configuración, pero debe cifrarse para transportarlo y nunca versionarse. Ver [`PLAYBOOK-KNOWLEDGE-BACKUP.md`](./PLAYBOOK-KNOWLEDGE-BACKUP.md).
 
+## Engram Cloud local-first
+
+Opcionalmente, cada PC puede conservar su SQLite local y replicar proyectos
+explícitos contra un servidor portable Engram Cloud + PostgreSQL:
+
+```bash
+~/.config/opencode/scripts/knowledge-sync
+~/.config/opencode/scripts/knowledge-sync-status
+```
+
+El servidor no está en el request path del MCP: si está apagado, las operaciones
+locales continúan. Ver [`PLAYBOOK-KNOWLEDGE-CLOUD.md`](./PLAYBOOK-KNOWLEDGE-CLOUD.md).
+
 ## Comandos relevantes
 
 - `/memory-init` (usa `plan` como agente guaranteed del addon)

@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly local-first Engram Cloud synchronization
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5min
+Unit=opencode-knowledge-sync.service
+
+[Install]
+WantedBy=timers.target

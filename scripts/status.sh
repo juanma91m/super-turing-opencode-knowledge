@@ -114,3 +114,8 @@ for key in ("addonId", "version", "installedAt", "mode", "assetsOnly", "engramMc
 print("augmentedAgents=" + ",".join(data.get("augmentedAgents", [])))
 PY
 fi
+
+if [[ -f "$TARGET_DIR/knowledge-sync.conf" && -x "$TARGET_DIR/scripts/knowledge-sync-status" ]]; then
+  printf '\n## Engram Cloud sync\n'
+  "$TARGET_DIR/scripts/knowledge-sync-status" || true
+fi

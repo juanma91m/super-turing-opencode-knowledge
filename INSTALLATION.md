@@ -7,6 +7,8 @@
 - para Engram: `git`, `curl`, `tar` y Go o bootstrap automático de Go en Linux x86_64
 - para Qdrant local: `python3` con soporte `venv`
 - para backup/restore: `python3`, `tar` compatible vía stdlib y `flock` (normalmente provisto por `util-linux`)
+- para Engram Cloud server: Docker Engine con Compose y `openssl`
+- para sync horario en Linux: una sesión `systemd --user`
 
 ## Instalación recomendada
 
@@ -63,6 +65,20 @@ bash scripts/status.sh
 El status de Engram también informa el ref esperado/actual y si el patch
 versionado está aplicado, para distinguir drift real del working tree sucio
 esperado por el patch.
+
+## Engram Cloud opcional
+
+Después de instalar assets, copiar la plantilla machine-local:
+
+```bash
+cp ~/.config/opencode/knowledge/knowledge-sync.conf.example \
+  ~/.config/opencode/knowledge-sync.conf
+chmod 600 ~/.config/opencode/knowledge-sync.conf
+```
+
+Configurar URL, token y proyectos existentes. El deployment portable vive en
+`server/`; el bootstrap y timer horario están en
+[`PLAYBOOK-KNOWLEDGE-CLOUD.md`](./PLAYBOOK-KNOWLEDGE-CLOUD.md).
 
 ## Migración de estado a otra PC
 

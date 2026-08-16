@@ -1,0 +1,56 @@
+name: opencode-knowledge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - engram-cloud-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  engram-cloud:
+    image: opencode-knowledge-engram:${ENGRAM_REF}
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+      args:
+        ENGRAM_REF: ${ENGRAM_REF}
+        ENGRAM_VERSION: ${ENGRAM_VERSION}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENGRAM_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      ENGRAM_CLOUD_TOKEN: ${ENGRAM_CLOUD_TOKEN}
+      ENGRAM_CLOUD_ADMIN: ${ENGRAM_CLOUD_ADMIN}
+      ENGRAM_JWT_SECRET: ${ENGRAM_JWT_SECRET}
+      ENGRAM_CLOUD_ALLOWED_PROJECTS: ${ENGRAM_CLOUD_ALLOWED_PROJECTS}
+      ENGRAM_CLOUD_HOST: 0.0.0.0
+      ENGRAM_PORT: 18080
+    ports:
+      - "${ENGRAM_CLOUD_BIND_ADDRESS}:${ENGRAM_CLOUD_PORT}:18080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:18080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  engram-cloud-postgres:
