@@ -7,6 +7,7 @@ Guía operativa para usar la capa `super-turing-opencode-knowledge` como addon s
 - overview y gobernanza: este playbook
 - componente Engram: `PLAYBOOK-KNOWLEDGE-ENGRAM.md`
 - componente Qdrant: `PLAYBOOK-KNOWLEDGE-QDRANT.md`
+- backup/restore portable: `PLAYBOOK-KNOWLEDGE-BACKUP.md`
 
 ## 1. Qué resuelve esta capa
 

@@ -91,6 +91,30 @@ bash scripts/install.sh --assets-only
 bash scripts/status.sh
 ```
 
+## Backup y migración a otra PC
+
+El addon puede generar un único archivo portable con:
+
+- backup SQLite consistente de Engram,
+- export lógico JSON de Engram como fallback,
+- storage local de Qdrant sin su lock efímero,
+- manifest de versiones/modelo y checksums SHA-256.
+
+```bash
+bash scripts/knowledge_backup.sh --output "$HOME/opencode-knowledge-backup.tar.gz"
+bash scripts/knowledge_restore.sh --archive "$HOME/opencode-knowledge-backup.tar.gz" --verify-only
+```
+
+La restauración real debe ejecutarse desde una terminal después de cerrar OpenCode y exige confirmación explícita:
+
+```bash
+bash scripts/knowledge_restore.sh \
+  --archive "$HOME/opencode-knowledge-backup.tar.gz" \
+  --confirm-restore
+```
+
+El archivo contiene memoria y payloads potencialmente sensibles; no incluye secrets de configuración, pero debe cifrarse para transportarlo y nunca versionarse. Ver [`PLAYBOOK-KNOWLEDGE-BACKUP.md`](./PLAYBOOK-KNOWLEDGE-BACKUP.md).
+
 ## Comandos relevantes
 
 - `/memory-init` (usa `plan` como agente guaranteed del addon)

@@ -6,6 +6,7 @@
 - una instalación base funcional de OpenCode
 - para Engram: `git`, `curl`, `tar` y Go o bootstrap automático de Go en Linux x86_64
 - para Qdrant local: `python3` con soporte `venv`
+- para backup/restore: `python3`, `tar` compatible vía stdlib y `flock` (normalmente provisto por `util-linux`)
 
 ## Instalación recomendada
 
@@ -62,6 +63,35 @@ bash scripts/status.sh
 El status de Engram también informa el ref esperado/actual y si el patch
 versionado está aplicado, para distinguir drift real del working tree sucio
 esperado por el patch.
+
+## Migración de estado a otra PC
+
+En la PC origen:
+
+```bash
+bash ~/.config/opencode/scripts/knowledge_backup.sh \
+  --output "$HOME/opencode-knowledge-backup.tar.gz"
+```
+
+En la PC destino:
+
+1. instalar primero la misma versión del stack y de este addon,
+2. copiar el archivo por un canal cifrado,
+3. validar sin escribir,
+4. cerrar OpenCode y todo proceso Engram,
+5. restaurar con confirmación explícita.
+
+```bash
+bash ~/.config/opencode/scripts/knowledge_restore.sh \
+  --archive "$HOME/opencode-knowledge-backup.tar.gz" \
+  --verify-only
+
+bash ~/.config/opencode/scripts/knowledge_restore.sh \
+  --archive "$HOME/opencode-knowledge-backup.tar.gz" \
+  --confirm-restore
+```
+
+Antes de reemplazar estado existente, restore deja un rollback bajo `~/.local/share/super-turing-opencode-knowledge/restore-backups/`. Las versiones de Engram, `qdrant-client` y la configuración de embeddings deben coincidir; cualquier excepción requiere un flag `--allow-*-mismatch` explícito.
 
 ## Interacción con el stack base
 

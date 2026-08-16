@@ -4,6 +4,7 @@
 
 ### Added
 
+- backup/restore portable de Engram y Qdrant local con manifest versionado, checksums SHA-256, backup SQLite online, export lógico de Engram, rollback automático y validaciones de compatibilidad
 - extracción inicial del knowledge layer desde `super-turing-opencode` a `super-turing-opencode-knowledge`
 - assets runtime y operativos de Engram y Qdrant en un solo repo con componentes separados
 - scripts `install.sh`, `status.sh` y `uninstall.sh` para instalar el addon sobre `~/.config/opencode`
@@ -11,6 +12,7 @@
 
 ### Changed
 
+- `KNOWLEDGE-MANIFEST.json` sube a `0.2.0`
 - Engram sube del snapshot upstream `64bf163` al ref `1dafc0f`; el patch `source_agent` fue regenerado contra la arquitectura actual y el status ahora valida ref y patch aplicados
 - `KNOWLEDGE-MANIFEST.json` sube a `0.1.1`
 - `knowledge-reader` deja de forzar `variant: xhigh` y tanto `knowledge-reader` como `knowledge-curator` recortan tools UI irrelevantes para bajar costo fijo y costo de subagentes read-only sin afectar su rol
