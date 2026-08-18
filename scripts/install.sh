@@ -10,7 +10,7 @@ VALIDATE=1
 ASSETS_ONLY=0
 MODE="all"
 MANAGED_FILES=()
-CLOUD_MODE=""
+CLOUD_MODE="local-only"
 CLOUD_SERVER_INPUT=""
 CLOUD_TOKEN=""
 CLOUD_PROJECTS=""
@@ -28,6 +28,7 @@ Options:
   --target-dir <path>   Target OpenCode config dir (default: ~/.config/opencode)
   --server-and-client   Install Engram Cloud Docker server and configure this PC as client
   --client-only         Configure this PC against an existing Engram Cloud server
+  --local-only          Keep knowledge local; no Cloud server/client config (default)
   --cloud-server <host:port|url>
                         Server endpoint; prompted when omitted
   --cloud-token <token> Sync token for a fresh client-only config; prefer the secure prompt
@@ -103,21 +104,6 @@ normalize_projects() {
 }
 
 resolve_cloud_mode() {
-  if [[ -z "$CLOUD_MODE" ]]; then
-    if [[ ! -t 0 ]]; then
-      printf 'Non-interactive installation requires --server-and-client or --client-only\n' >&2
-      exit 2
-    fi
-    printf '%s\n' 'Seleccioná el modo de Knowledge:'
-    printf '%s\n' '  1) server-and-client (Docker server + cliente local)'
-    printf '%s\n' '  2) client-only (conectar a un servidor existente)'
-    read -r -p 'Opción [1-2]: ' answer
-    case "$answer" in
-      1) CLOUD_MODE="server-and-client" ;;
-      2) CLOUD_MODE="client-only" ;;
-      *) printf 'Opción inválida: %s\n' "$answer" >&2; exit 2 ;;
-    esac
-  fi
   CLIENT_CONFIG="$TARGET_DIR/knowledge-sync.conf"
 }
 
@@ -473,13 +459,17 @@ while [[ "$#" -gt 0 ]]; do
       shift 2
       ;;
     --server-and-client)
-      [[ -z "$CLOUD_MODE" ]] || { printf 'Choose only one cloud install mode\n' >&2; exit 2; }
+      [[ "$CLOUD_MODE" == "local-only" ]] || { printf 'Choose only one cloud install mode\n' >&2; exit 2; }
       CLOUD_MODE="server-and-client"
       shift
       ;;
     --client-only)
-      [[ -z "$CLOUD_MODE" ]] || { printf 'Choose only one cloud install mode\n' >&2; exit 2; }
+      [[ "$CLOUD_MODE" == "local-only" ]] || { printf 'Choose only one cloud install mode\n' >&2; exit 2; }
       CLOUD_MODE="client-only"
+      shift
+      ;;
+    --local-only)
+      CLOUD_MODE="local-only"
       shift
       ;;
     --cloud-server)
@@ -560,6 +550,7 @@ write_install_marker
 case "$CLOUD_MODE" in
   server-and-client) install_server_and_client ;;
   client-only) install_client_only ;;
+  local-only) log 'Knowledge Cloud no configurado; estado local preservado' ;;
 esac
 validate_config
 

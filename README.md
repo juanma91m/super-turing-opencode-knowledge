@@ -68,6 +68,15 @@ Eso se desacopla en una fase posterior.
 
 ## Instalación
 
+Por defecto, el addon instala los runtimes locales sin configurar Engram Cloud:
+
+```bash
+bash scripts/install.sh --all
+```
+
+`--server-and-client` y `--client-only` habilitan explícitamente los modos
+Cloud y sus requisitos adicionales.
+
 Guía más detallada: [`INSTALLATION.md`](./INSTALLATION.md)
 
 ```bash

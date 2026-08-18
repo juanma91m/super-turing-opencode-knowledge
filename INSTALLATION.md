@@ -18,6 +18,9 @@ cd super-turing-opencode-knowledge
 bash scripts/install.sh --all
 ```
 
+La instalación normal mantiene Knowledge local y no requiere Docker, servidor
+Cloud ni credenciales. Los modos Cloud son opt-in explícitos.
+
 ## Modos por componente
 
 ### Solo Engram
@@ -67,6 +70,18 @@ versionado está aplicado, para distinguir drift real del working tree sucio
 esperado por el patch.
 
 ## Engram Cloud opcional
+
+Para instalar servidor y cliente en esta máquina:
+
+```bash
+bash scripts/install.sh --server-and-client --all
+```
+
+Para conectar solo el cliente a un servidor existente:
+
+```bash
+bash scripts/install.sh --client-only --all
+```
 
 Después de instalar assets, copiar la plantilla machine-local:
 

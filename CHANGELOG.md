@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- la instalación portable usa `local-only` por defecto y deja Engram Cloud como opt-in explícito,
+- agrega `scripts/preflight.sh` para validar dependencias locales antes de que el orquestador modifique el target,
+- evita que una instalación completa no interactiva falle después de instalar la base por falta de modo Cloud.
+
 ## 0.3.0
 
 - agrega deployment reproducible Engram Cloud + PostgreSQL 16 sin compartir el SQLite cliente,
