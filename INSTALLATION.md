@@ -49,6 +49,7 @@ bash scripts/install.sh --assets-only
 - skill backend-agnostic `memoria-durable-opencode`
 - skill backend-specific `memoria-engram-opencode`
 - plugin `plugins/engram-memory-hints.ts`
+- plugin `plugins/engram-session-context.ts` para propagar el `sessionID` real a `engram_mem_session_summary`
 - merge del bloque MCP de Engram en `~/.config/opencode/opencode.json` cuando corresponde
 - marker `~/.config/opencode/.opencode-knowledge-addon.json` con metadata de instalación y agentes augmentados
 - `/memory-init` queda montado sobre `plan` para no depender de la existencia de `planner`
@@ -58,6 +59,10 @@ bash scripts/install.sh --assets-only
 - si se pide runtime Qdrant:
   - `~/.local/share/super-turing-opencode-knowledge/`
   - virtualenv local con `qdrant-client[fastembed]`
+
+La superficie MCP instalada incluye `mem_judge`, `mem_current_project`,
+`mem_doctor` y `mem_review`; mantiene las tools core de memoria y no publica
+`mem_delete` en el perfil operativo del addon.
 
 ## Validación
 

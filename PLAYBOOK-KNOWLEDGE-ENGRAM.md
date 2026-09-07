@@ -42,6 +42,29 @@ bash ~/.config/opencode/scripts/install-engram.sh
 bash ~/.config/opencode/scripts/knowledge_status_engram.sh
 ```
 
+## Superficie MCP y sesiones
+
+- el addon expone las tools core de memoria más `mem_judge`,
+  `mem_current_project`, `mem_doctor` y `mem_review`,
+- `mem_delete` queda fuera de la superficie operativa por defecto,
+- el plugin `engram-session-context.ts` inyecta el `sessionID` real de OpenCode
+  solo en `engram_mem_session_summary` y preserva cualquier ID explícito,
+- si ese ID todavía no existe en SQLite, `mem_session_summary` resuelve el
+  proyecto con las reglas normales y crea la sesión antes de guardar; esta
+  excepción no relaja el rechazo de sesiones desconocidas en `mem_save`,
+- cada summary con un ID canónico usa
+  `topic_key=session/<session-id>/summary`: repetir una sesión actualiza la misma
+  observación y otra sesión crea una distinta; IDs explícitos no canónicos usan
+  un segmento hash estable para no colisionar al normalizar o truncar.
+
+OpenCode trata **cada export** de un archivo auto-descubierto bajo `plugins/*.ts`
+como una plugin factory. Esos módulos deben exportar únicamente factories que
+devuelvan un objeto de hooks; helpers internos no deben llevar `export`.
+
+`engram conflicts scan --semantic` puede ejecutar llamadas al runner también en
+dry-run, pero sin `--apply` no persiste relaciones ni mutaciones de sync. Usar
+`engram conflicts scan --help` para revisar flags y presupuesto antes de correrlo.
+
 ## Réplica Cloud opcional
 
 Cada PC conserva SQLite local y puede sincronizar una allowlist explícita de

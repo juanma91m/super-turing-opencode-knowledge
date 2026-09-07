@@ -45,6 +45,7 @@ Este repo pasa a ser dueño de:
 - comandos `/knowledge-*`,
 - comando `/memory-init`,
 - `plugins/engram-memory-hints.ts`,
+- `plugins/engram-session-context.ts`, que propaga el `sessionID` real de OpenCode a los summaries de Engram,
 - `knowledge-reader`,
 - overlays de autonomía para `plan` y `build`,
 - `knowledge-curator`,
@@ -59,6 +60,14 @@ Engram no se mantiene como fork funcional independiente: el addon fija un commit
 upstream exacto, aplica `patches/engram-source-agent.patch` y construye el binario
 local. El checkout en `~/.local/src/engram-opencode-stack` es estado gestionado de
 build, no el source of truth del cambio.
+
+El MCP expone una superficie operativa curada: lectura, escritura durable,
+diagnóstico, review y adjudicación explícita. `mem_delete` no se expone a los
+agentes por defecto. Los summaries usan `session/<session-id>/summary` para IDs
+canónicos de OpenCode, por lo que repetir el cierre de una misma sesión actualiza
+su memoria y sesiones distintas permanecen separadas. IDs explícitos que no sean
+canónicos usan un segmento derivado por hash para evitar colisiones por
+normalización o truncado.
 
 ## Qué NO mueve todavía
 

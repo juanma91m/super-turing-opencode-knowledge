@@ -8,7 +8,8 @@ from pathlib import Path
 
 ENGRAM_TOOLS = (
     "mem_save,mem_search,mem_context,mem_session_summary,"
-    "mem_get_observation,mem_suggest_topic_key,mem_update,mem_delete"
+    "mem_get_observation,mem_suggest_topic_key,mem_update,mem_judge,"
+    "mem_current_project,mem_doctor,mem_review"
 )
 
 

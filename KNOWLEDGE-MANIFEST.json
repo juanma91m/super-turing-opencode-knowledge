@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "super-turing-opencode-knowledge",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "managedFiles": [
     "PLAYBOOK-KNOWLEDGE.md",
     "PLAYBOOK-KNOWLEDGE-ENGRAM.md",
@@ -19,6 +19,7 @@
     "knowledge/knowledge-sync.conf.example",
     "patches/engram-source-agent.patch",
     "plugins/engram-memory-hints.ts",
+    "plugins/engram-session-context.ts",
     "scripts/install-engram.sh",
     "scripts/install-knowledge-engram.sh",
     "scripts/install-knowledge-qdrant.sh",
@@ -61,6 +62,7 @@
     "la capa de compatibilidad cognitiva con el stack base sigue temporalmente en super-turing-opencode y se desacopla en una fase posterior",
     "install.sh instala por defecto todos los assets del addon y puede bootstrappear solo Engram, solo Qdrant o ambos",
     "Engram se construye desde un ref upstream exacto y aplica un patch versionado propiedad de este addon",
+    "los summaries de sesión reciben el sessionID real de OpenCode mediante un adaptador thin y hacen upsert por topic_key estable",
     "el addon inyecta autonomía conservadora de knowledge en plan/build y la complementa en planner/master-dev/agent-design si esos agentes existen en la instalación activa",
     "knowledge_backup.sh genera un archivo portable con backup SQLite consistente, export lógico de Engram, Qdrant local sin locks efímeros, checksums y manifest de compatibilidad",
     "knowledge_restore.sh exige confirmación, rechaza archivos inseguros o incompatibles y conserva rollback local antes de reemplazar estado",

@@ -73,6 +73,81 @@ index a0971d2..73ddfe6 100644
  
  ### Timeline (Progressive Disclosure)
  
+diff --git a/cmd/engram/conflicts.go b/cmd/engram/conflicts.go
+index aa1799f..2a02600 100644
+--- a/cmd/engram/conflicts.go
++++ b/cmd/engram/conflicts.go
+@@ -2,6 +2,7 @@ package main
+ 
+ import (
+ 	"fmt"
++	"io"
+ 	"os"
+ 	"strconv"
+ 	"strings"
+@@ -50,6 +51,23 @@ func printConflictsUsage() {
+ 	fmt.Fprintln(os.Stderr, "  deferred   [--status S]  [--limit N]  [--inspect SYNC_ID]  [--replay]")
+ }
+ 
++func printConflictsScanUsage(w io.Writer) {
++	fmt.Fprintln(w, "usage: engram conflicts scan [options]")
++	fmt.Fprintln(w)
++	fmt.Fprintln(w, "Options:")
++	fmt.Fprintln(w, "  --project P                 Project to scan (default: detect from cwd)")
++	fmt.Fprintln(w, "  --since RFC3339             Only inspect observations created since this time")
++	fmt.Fprintln(w, "  --dry-run                   Evaluate without persisting (default)")
++	fmt.Fprintln(w, "  --apply                     Persist detected relations")
++	fmt.Fprintln(w, "  --max-insert N              Maximum pending relations to insert (default: 100)")
++	fmt.Fprintln(w, "  --semantic                  Evaluate candidates with the configured LLM runner")
++	fmt.Fprintln(w, "  --concurrency N             Semantic workers, 1-20 (default: 5)")
++	fmt.Fprintln(w, "  --timeout-per-call SECONDS  Semantic call timeout (default: 60)")
++	fmt.Fprintln(w, "  --max-semantic N            Maximum semantic calls (default: 100)")
++	fmt.Fprintln(w, "  --yes                       Skip semantic cost confirmation")
++	fmt.Fprintln(w, "  -h, --help                  Show this help")
++}
++
+ // resolveConflictsProject returns the explicit project if non-empty, otherwise falls
+ // back to detecting the project from the current working directory.
+ // On detection failure, writes an error to stderr and calls exitFunc(1).
+@@ -301,6 +319,12 @@ func cmdConflictsStats(cfg store.Config) {
+ 
+ func cmdConflictsScan(cfg store.Config) {
+ 	args := os.Args[3:]
++	for _, arg := range args {
++		if arg == "-h" || arg == "--help" {
++			printConflictsScanUsage(os.Stdout)
++			return
++		}
++	}
+ 
+ 	var projectFlag, sinceFlag string
+ 	dryRun := true // default
+diff --git a/cmd/engram/conflicts_test.go b/cmd/engram/conflicts_test.go
+index e1ae181..67f99c2 100644
+--- a/cmd/engram/conflicts_test.go
++++ b/cmd/engram/conflicts_test.go
+@@ -230,6 +230,21 @@ func TestCmdConflictsScan_DryRun(t *testing.T) {
+ 	}
+ }
+ 
++func TestCmdConflictsScan_HelpPrintsUsageWithoutRunningScan(t *testing.T) {
++	cfg := testConfig(t)
++	withArgs(t, "engram", "conflicts", "scan", "--help")
++
++	stdout, stderr := captureOutput(t, func() { cmdConflicts(cfg) })
++	if stderr != "" {
++		t.Fatalf("unexpected stderr for scan help: %q", stderr)
++	}
++	for _, want := range []string{"usage: engram conflicts scan", "--semantic", "--max-semantic"} {
++		if !strings.Contains(stdout, want) {
++			t.Errorf("scan help missing %q; got: %q", want, stdout)
++		}
++	}
++}
++
+ // TestCmdConflictsScan_Apply verifies `engram conflicts scan --apply` inserts rows
+ // and reports an inserted count.
+ func TestCmdConflictsScan_Apply(t *testing.T) {
 diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
 index f212f39..8358335 100644
 --- a/docs/ARCHITECTURE.md
@@ -86,10 +161,20 @@ index f212f39..8358335 100644
  - `mem_review` supports `action="list"` (`project`, `limit`) and `action="mark_reviewed"` (`observation_id`). Marking reviewed is local-only for now because `review_after` is intentionally not part of sync payloads in this phase.
  - Exact dedupe prevents repeated inserts in a rolling window (hash + project + scope + type + title)
 diff --git a/internal/mcp/mcp.go b/internal/mcp/mcp.go
-index e1fb4d1..8e82186 100644
+index e1fb4d1..8839dd0 100644
 --- a/internal/mcp/mcp.go
 +++ b/internal/mcp/mcp.go
-@@ -284,6 +284,9 @@ func registerTools(srv *server.MCPServer, s *store.Store, cfg MCPConfig, allowli
+@@ -15,6 +15,9 @@ package mcp
+ 
+ import (
+ 	"context"
++	"crypto/sha256"
++	"database/sql"
++	"encoding/hex"
+ 	"encoding/json"
+ 	"errors"
+ 	"fmt"
+@@ -284,6 +287,9 @@ func registerTools(srv *server.MCPServer, s *store.Store, cfg MCPConfig, allowli
  				mcp.WithString("scope",
  					mcp.Description("Filter by scope: project (default) or personal"),
  				),
@@ -99,7 +184,7 @@ index e1fb4d1..8e82186 100644
  				mcp.WithString("match_mode",
  					mcp.Description("Token matching: \"all\" (default — every token must match, FTS5 AND) or \"any\" (any token matches — broader recall for multi-token queries). Any other value returns an error."),
  				),
-@@ -364,6 +367,9 @@ Examples:
+@@ -364,6 +370,9 @@ Examples:
  				mcp.WithBoolean("capture_prompt",
  					mcp.Description("Automatically capture the current user prompt when available (default: true). Set false for SDD artifacts or automated saves."),
  				),
@@ -109,7 +194,7 @@ index e1fb4d1..8e82186 100644
  			),
  			queuedWriteHandler(writeQueue, handleSave(s, cfg, activity)),
  		)
-@@ -399,6 +405,9 @@ Examples:
+@@ -399,6 +408,9 @@ Examples:
  				mcp.WithString("topic_key",
  					mcp.Description("New topic key (normalized internally)"),
  				),
@@ -119,7 +204,25 @@ index e1fb4d1..8e82186 100644
  			),
  			queuedWriteHandler(writeQueue, handleUpdate(s)),
  		)
-@@ -683,6 +692,9 @@ GUIDELINES:
+@@ -632,7 +644,7 @@ Examples:
+ 				mcp.WithTitleAnnotation("Save Session Summary"),
+ 				mcp.WithReadOnlyHintAnnotation(false),
+ 				mcp.WithDestructiveHintAnnotation(false),
+-				mcp.WithIdempotentHintAnnotation(false),
++				mcp.WithIdempotentHintAnnotation(true),
+ 				mcp.WithOpenWorldHintAnnotation(false),
+ 				mcp.WithDescription(`Save a comprehensive end-of-session summary. Call this when a session is ending or when significant work is complete. This creates a structured summary that future sessions will use to understand what happened.
+ 
+@@ -672,7 +684,7 @@ GUIDELINES:
+ 					mcp.Description("Full session summary using the Goal/Instructions/Discoveries/Accomplished/Next Steps/Relevant Files format"),
+ 				),
+ 				mcp.WithString("session_id",
+-					mcp.Description("Session ID (default: manual-save-{project})"),
++					mcp.Description("Session ID used for idempotent summary upserts (default: manual-save-{project})"),
+ 				),
+ 				mcp.WithString("project",
+ 					mcp.Description("Optional explicit project for this memory. Accepted only when backed by known context (existing project, matching session, repo config, or ambiguous-project recovery); invalid or unbacked names fail loudly."),
+@@ -683,6 +695,9 @@ GUIDELINES:
  				mcp.WithString("recovery_token",
  					mcp.Description("Short-lived token returned by an ambiguous_project error. Required with project_choice_reason=user_selected_after_ambiguous_project."),
  				),
@@ -129,7 +232,7 @@ index e1fb4d1..8e82186 100644
  			),
  			queuedWriteHandler(writeQueue, handleSessionSummary(s, cfg, activity)),
  		)
-@@ -971,6 +983,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -971,6 +986,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  		typ, _ := req.GetArguments()["type"].(string)
  		projectOverride, _ := req.GetArguments()["project"].(string)
  		scope, _ := req.GetArguments()["scope"].(string)
@@ -137,7 +240,7 @@ index e1fb4d1..8e82186 100644
  		matchMode, _ := req.GetArguments()["match_mode"].(string)
  		allProjects := boolArg(req, "all_projects", false)
  		limit := intArg(req, "limit", 10)
-@@ -1022,6 +1035,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -1022,6 +1038,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  			Type:      typ,
  			Project:   searchProject,
  			Scope:     scope,
@@ -145,7 +248,7 @@ index e1fb4d1..8e82186 100644
  			Limit:     limit,
  			MatchMode: matchMode,
  		})
-@@ -1058,6 +1072,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -1058,6 +1075,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  			if r.Project != nil {
  				projectDisplay = fmt.Sprintf(" | project: %s", *r.Project)
  			}
@@ -156,7 +259,7 @@ index e1fb4d1..8e82186 100644
  			preview := truncate(r.Content, 300)
  			if len(r.Content) > 300 {
  				anyTruncated = true
-@@ -1067,10 +1085,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -1067,10 +1088,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  			if r.State() == store.ObservationStateNeedsReview {
  				stateDisplay = " | state: needs_review"
  			}
@@ -169,7 +272,7 @@ index e1fb4d1..8e82186 100644
  			entry := map[string]any{
  				"id":      r.ID,
  				"sync_id": r.SyncID,
-@@ -1083,6 +1101,9 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -1083,6 +1104,9 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  			if r.Project != nil {
  				entry["project"] = *r.Project
  			}
@@ -179,7 +282,7 @@ index e1fb4d1..8e82186 100644
  			if r.ReviewAfter != nil {
  				entry["review_after"] = *r.ReviewAfter
  			}
-@@ -1199,6 +1220,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+@@ -1199,6 +1223,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
  		sessionID, _ := req.GetArguments()["session_id"].(string)
  		scope, _ := req.GetArguments()["scope"].(string)
  		topicKey, _ := req.GetArguments()["topic_key"].(string)
@@ -187,7 +290,7 @@ index e1fb4d1..8e82186 100644
  		projectChoice, _ := req.GetArguments()["project"].(string)
  		_, explicitProjectProvided := req.GetArguments()["project"]
  		projectChoiceReason, _ := req.GetArguments()["project_choice_reason"].(string)
-@@ -1266,6 +1288,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+@@ -1266,6 +1291,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
  			Type:      typ,
  			Title:     title,
  			Content:   content,
@@ -195,7 +298,7 @@ index e1fb4d1..8e82186 100644
  			Project:   project,
  			Scope:     scope,
  			TopicKey:  topicKey,
-@@ -1303,6 +1326,9 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+@@ -1303,6 +1329,9 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
  		if similarWarning != "" {
  			msg += "\n" + similarWarning
  		}
@@ -205,7 +308,7 @@ index e1fb4d1..8e82186 100644
  
  		// Post-transaction conflict candidate detection (REQ-001).
  		// Errors are logged and swallowed — detection failure never fails the save.
-@@ -1410,8 +1436,12 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
+@@ -1410,8 +1439,12 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
  		if v, ok := req.GetArguments()["topic_key"].(string); ok {
  			update.TopicKey = &v
  		}
@@ -219,7 +322,7 @@ index e1fb4d1..8e82186 100644
  			return mcp.NewToolResultError("provide at least one field to update"), nil
  		}
  
-@@ -1426,6 +1456,9 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
+@@ -1426,6 +1459,9 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
  		}
  
  		msg := fmt.Sprintf("Memory updated: #%d %q (%s, scope=%s)", obs.ID, obs.Title, obs.Type, obs.Scope)
@@ -229,7 +332,7 @@ index e1fb4d1..8e82186 100644
  		if contentLen > s.MaxObservationLength() {
  			msg += fmt.Sprintf("\n⚠ WARNING: Content was truncated from %d to %d chars. Consider splitting into smaller observations.", contentLen, s.MaxObservationLength())
  		}
-@@ -1844,7 +1877,11 @@ func handleGetObservation(s *store.Store, cfg MCPConfig) server.ToolHandlerFunc
+@@ -1844,7 +1880,11 @@ func handleGetObservation(s *store.Store, cfg MCPConfig) server.ToolHandlerFunc
  		}
  		toolName := ""
  		if obs.ToolName != nil {
@@ -242,7 +345,7 @@ index e1fb4d1..8e82186 100644
  		}
  		duplicateMeta := fmt.Sprintf("\nDuplicates: %d", obs.DuplicateCount)
  		revisionMeta := fmt.Sprintf("\nRevisions: %d", obs.RevisionCount)
-@@ -1876,6 +1913,7 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+@@ -1876,6 +1916,7 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
  		_, explicitProjectProvided := req.GetArguments()["project"]
  		projectChoiceReason, _ := req.GetArguments()["project_choice_reason"].(string)
  		recoveryToken, _ := req.GetArguments()["recovery_token"].(string)
@@ -250,15 +353,81 @@ index e1fb4d1..8e82186 100644
  
  		// Reject empty/whitespace-only content before any project resolution (#393).
  		if strings.TrimSpace(content) == "" {
-@@ -1916,6 +1954,7 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+@@ -1896,7 +1937,18 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+ 
+ 		// Resolve write project using the full MCP precedence: explicit request,
+ 		// existing session association, process override, repo config/directory detection, then cwd fallback.
+-		detRes, err := resolveSaveWriteProjectWithProcessOverride(s, projectChoice, explicitProjectProvided, projectChoiceReason, sessionID, validateRecoveryToken, cfg.DefaultProject)
++		resolutionSessionID := sessionID
++		if strings.TrimSpace(sessionID) != "" {
++			if _, sessionErr := s.GetSession(sessionID); errors.Is(sessionErr, sql.ErrNoRows) {
++				// OpenCode's session-context plugin injects the real host session ID
++				// before Engram has necessarily observed a session-start event. Resolve
++				// the project normally, then create the session below.
++				resolutionSessionID = ""
++			} else if sessionErr != nil {
++				return mcp.NewToolResultError("Failed to resolve session: " + sessionErr.Error()), nil
++			}
++		}
++		detRes, err := resolveSaveWriteProjectWithProcessOverride(s, projectChoice, explicitProjectProvided, projectChoiceReason, resolutionSessionID, validateRecoveryToken, cfg.DefaultProject)
+ 		if err != nil {
+ 			return writeProjectErrorResult(activity, recoverySessionID, detRes, err), nil
+ 		}
+@@ -1909,14 +1961,18 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+ 		}
+ 
+ 		// Ensure the implicit MCP session exists with the current working directory.
+-		_ = ensureImplicitSessionWithCWD(s, sessionID, project)
++		if err := ensureImplicitSessionWithCWD(s, sessionID, project); err != nil {
++			return mcp.NewToolResultError("Failed to create summary session: " + err.Error()), nil
++		}
+ 
+ 		_, err = s.AddObservation(store.AddObservationParams{
+ 			SessionID: sessionID,
  			Type:      "session_summary",
  			Title:     fmt.Sprintf("Session summary: %s", project),
  			Content:   content,
 +			ToolName:  normalizeSourceAgent(sourceAgent),
  			Project:   project,
++			TopicKey:  sessionSummaryTopicKey(sessionID),
  		})
  		if err != nil {
-@@ -2959,6 +2998,36 @@ func defaultSessionID(project string) string {
+ 			return mcp.NewToolResultError("Failed to save session summary: " + err.Error()), nil
+@@ -1931,6 +1987,33 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+ 	}
+ }
+ 
++func sessionSummaryTopicKey(sessionID string) string {
++	sessionID = strings.TrimSpace(sessionID)
++	candidate := fmt.Sprintf("session/%s/summary", sessionID)
++	if len(candidate) <= 120 && isCanonicalSummarySessionID(sessionID) {
++		return candidate
++	}
++
++	// Store topic keys are lowercase and capped at 120 bytes. Hash only IDs that
++	// would be normalized ambiguously so distinct explicit session IDs cannot
++	// collapse while standard OpenCode IDs keep the readable canonical format.
++	digest := sha256.Sum256([]byte(sessionID))
++	return fmt.Sprintf("session/id-%s/summary", hex.EncodeToString(digest[:16]))
++}
++
++func isCanonicalSummarySessionID(sessionID string) bool {
++	if sessionID == "" {
++		return false
++	}
++	for _, char := range sessionID {
++		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' || char == '_' {
++			continue
++		}
++		return false
++	}
++	return true
++}
++
+ func handleSessionStart(s *store.Store, cfg MCPConfig, activity *SessionActivity) server.ToolHandlerFunc {
+ 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+ 		id, _ := req.GetArguments()["id"].(string)
+@@ -2959,6 +3042,36 @@ func defaultSessionID(project string) string {
  	return "manual-save-" + project
  }
  
@@ -296,7 +465,7 @@ index e1fb4d1..8e82186 100644
  // the caller did not provide an explicit session_id.
  //
 diff --git a/internal/mcp/mcp_test.go b/internal/mcp/mcp_test.go
-index 89fc21e..ce2fdc4 100644
+index 89fc21e..c5e7a1f 100644
 --- a/internal/mcp/mcp_test.go
 +++ b/internal/mcp/mcp_test.go
 @@ -1462,13 +1462,14 @@ func TestHandleUpdateAcceptsAllOptionalFields(t *testing.T) {
@@ -458,6 +627,285 @@ index 89fc21e..ce2fdc4 100644
  }
  
  func TestHandleContextWithSessionOnlyUsesNoneProjects(t *testing.T) {
+@@ -2623,6 +2754,147 @@ func TestHandleSessionSummaryCreatesProjectScopedSession(t *testing.T) {
+ 	assertSessionSyncMutationDirectory(t, s, "manual-save-summary-session-project", dir)
+ }
+ 
++func TestHandleSessionSummaryUpsertsBySessionID(t *testing.T) {
++	s := newMCPTestStore(t)
++	const sessionID = "summary-idempotent-session"
++	const project = "summary-idempotent-project"
++	if err := s.CreateSession(sessionID, project, "/tmp/summary-idempotent-project"); err != nil {
++		t.Fatalf("create session: %v", err)
++	}
++	h := handleSessionSummary(s, MCPConfig{}, NewSessionActivity(10*time.Minute))
++
++	for _, content := range []string{"first summary", "updated summary"} {
++		res, err := h(context.Background(), mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
++			"content":    content,
++			"session_id": sessionID,
++		}}})
++		if err != nil || res.IsError {
++			t.Fatalf("session summary: err=%v isError=%v text=%s", err, res.IsError, callResultText(t, res))
++		}
++	}
++
++	observations, err := s.SessionObservations(sessionID, 10)
++	if err != nil {
++		t.Fatalf("SessionObservations: %v", err)
++	}
++	if len(observations) != 1 {
++		t.Fatalf("expected one upserted summary, got %d", len(observations))
++	}
++	obs := observations[0]
++	if obs.Content != "updated summary" {
++		t.Errorf("summary content = %q; want latest content", obs.Content)
++	}
++	if obs.TopicKey == nil || *obs.TopicKey != "session/summary-idempotent-session/summary" {
++		t.Errorf("summary topic_key = %v; want session/%s/summary", obs.TopicKey, sessionID)
++	}
++	if obs.RevisionCount != 2 {
++		t.Errorf("summary revision_count = %d; want 2", obs.RevisionCount)
++	}
++}
++
++func TestHandleSessionSummaryCreatesInjectedOpenCodeSession(t *testing.T) {
++	dir := t.TempDir()
++	initTestGitRepo(t, dir)
++	cmd := exec.Command("git", "-C", dir, "remote", "add", "origin",
++		"git@github.com:user/summary-injected-session-project.git")
++	if out, err := cmd.CombinedOutput(); err != nil {
++		t.Fatalf("git remote add: %v\n%s", err, out)
++	}
++	t.Chdir(dir)
++
++	s := newMCPTestStore(t)
++	h := handleSessionSummary(s, MCPConfig{}, NewSessionActivity(10*time.Minute))
++	const sessionID = "ses-opencode-injected-123"
++
++	res, err := h(context.Background(), mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
++		"content":    "summary from a newly injected OpenCode session",
++		"session_id": sessionID,
++	}}})
++	if err != nil || res.IsError {
++		t.Fatalf("session summary: err=%v isError=%v text=%s", err, res.IsError, callResultText(t, res))
++	}
++
++	session, err := s.GetSession(sessionID)
++	if err != nil {
++		t.Fatalf("expected injected session to be created: %v", err)
++	}
++	if session.Project != "summary-injected-session-project" {
++		t.Errorf("session project = %q; want summary-injected-session-project", session.Project)
++	}
++	observations, err := s.SessionObservations(sessionID, 10)
++	if err != nil || len(observations) != 1 {
++		t.Fatalf("expected one summary for injected session: count=%d err=%v", len(observations), err)
++	}
++	if observations[0].TopicKey == nil || *observations[0].TopicKey != "session/ses-opencode-injected-123/summary" {
++		t.Errorf("unexpected summary topic: %v", observations[0].TopicKey)
++	}
++}
++
++func TestHandleSessionSummaryKeepsDifferentSessionsSeparate(t *testing.T) {
++	s := newMCPTestStore(t)
++	const project = "summary-multi-session-project"
++	h := handleSessionSummary(s, MCPConfig{}, NewSessionActivity(10*time.Minute))
++
++	for _, sessionID := range []string{"summary-session-a", "summary-session-b"} {
++		if err := s.CreateSession(sessionID, project, "/tmp/summary-multi-session-project"); err != nil {
++			t.Fatalf("create session %s: %v", sessionID, err)
++		}
++		res, err := h(context.Background(), mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
++			"content":    "summary for " + sessionID,
++			"session_id": sessionID,
++		}}})
++		if err != nil || res.IsError {
++			t.Fatalf("session summary %s: err=%v isError=%v text=%s", sessionID, err, res.IsError, callResultText(t, res))
++		}
++	}
++
++	observations, err := s.RecentObservations(project, "project", 10)
++	if err != nil {
++		t.Fatalf("RecentObservations: %v", err)
++	}
++	wantTopics := map[string]bool{
++		"session/summary-session-a/summary": false,
++		"session/summary-session-b/summary": false,
++	}
++	for _, obs := range observations {
++		if obs.Type == "session_summary" && obs.TopicKey != nil {
++			if _, ok := wantTopics[*obs.TopicKey]; ok {
++				wantTopics[*obs.TopicKey] = true
++			}
++		}
++	}
++	for topic, found := range wantTopics {
++		if !found {
++			t.Errorf("missing separate summary topic %q", topic)
++		}
++	}
++}
++
++func TestSessionSummaryTopicKeyAvoidsNormalizedIDCollisions(t *testing.T) {
++	if got := sessionSummaryTopicKey("ses-opencode-123"); got != "session/ses-opencode-123/summary" {
++		t.Fatalf("canonical OpenCode session topic = %q", got)
++	}
++
++	caseA := sessionSummaryTopicKey("Case-Sensitive-ID")
++	caseB := sessionSummaryTopicKey("case-sensitive-id")
++	if caseA == caseB {
++		t.Fatalf("case-distinct session IDs collapsed to %q", caseA)
++	}
++
++	longPrefix := strings.Repeat("a", 140)
++	longA := sessionSummaryTopicKey(longPrefix + "-a")
++	longB := sessionSummaryTopicKey(longPrefix + "-b")
++	if longA == longB {
++		t.Fatalf("long session IDs collapsed to %q", longA)
++	}
++	if len(longA) > 120 || len(longB) > 120 {
++		t.Fatalf("hashed topic key exceeds store limit: %d, %d", len(longA), len(longB))
++	}
++	if longA != sessionSummaryTopicKey(longPrefix+"-a") {
++		t.Fatal("summary topic key must be deterministic")
++	}
++}
++
+ func TestHandleCapturePassiveCreatesProjectScopedSession(t *testing.T) {
+ 	s := newMCPTestStore(t)
+ 	h := handleCapturePassive(s, MCPConfig{}, NewSessionActivity(10*time.Minute))
+@@ -2699,6 +2971,27 @@ func TestDestructiveToolAnnotation(t *testing.T) {
+ 	}
+ }
+ 
++func TestMemoryWriteIdempotencyAnnotations(t *testing.T) {
++	s := newMCPTestStore(t)
++	tools := NewServer(s).ListTools()
++
++	save := tools["mem_save"]
++	if save == nil {
++		t.Fatal("mem_save should be registered")
++	}
++	if hint := save.Tool.Annotations.IdempotentHint; hint == nil || *hint {
++		t.Error("mem_save without a topic_key must not be marked idempotent")
++	}
++
++	summary := tools["mem_session_summary"]
++	if summary == nil {
++		t.Fatal("mem_session_summary should be registered")
++	}
++	if hint := summary.Tool.Annotations.IdempotentHint; hint == nil || !*hint {
++		t.Error("mem_session_summary should be marked idempotent")
++	}
++}
++
+ // ─── Phase 3: MCPConfig, Default Project, Normalization, Similar Warnings ────
+ 
+ func TestNewServerWithConfig(t *testing.T) {
+diff --git a/internal/store/relations.go b/internal/store/relations.go
+index 1797d26..943f6d3 100644
+--- a/internal/store/relations.go
++++ b/internal/store/relations.go
+@@ -1475,6 +1475,16 @@ func (s *Store) ScanProject(opts ScanOptions) (ScanResult, error) {
+ 						return
+ 					}
+ 
++					// Dry-run may spend the explicitly approved semantic budget to
++					// evaluate candidates, but it must never persist verdicts or
++					// enqueue relation sync mutations.
++					if !opts.Apply {
++						mu.Lock()
++						result.SemanticJudged++
++						mu.Unlock()
++						return
++					}
++
+ 					// Persist non-not_conflict verdict.
+ 					_, judgeErr := s.JudgeBySemantic(JudgeBySemanticParams{
+ 						SourceID:   pair.sourceSnippet.SyncID,
+diff --git a/internal/store/scan_semantic_test.go b/internal/store/scan_semantic_test.go
+index 42c4982..f97ea24 100644
+--- a/internal/store/scan_semantic_test.go
++++ b/internal/store/scan_semantic_test.go
+@@ -30,8 +30,8 @@ func (r *errorRunner) Compare(_ context.Context, _ string) (SemanticVerdict, err
+ 
+ // routingRunner routes calls to different runners based on the call index.
+ type routingRunner struct {
+-	runners  []SemanticRunner
+-	callIdx  int
++	runners []SemanticRunner
++	callIdx int
+ }
+ 
+ func (r *routingRunner) Compare(ctx context.Context, prompt string) (SemanticVerdict, error) {
+@@ -144,6 +144,66 @@ func TestScanProject_Semantic_HappyPath(t *testing.T) {
+ 	}
+ }
+ 
++// TestScanProject_Semantic_DryRunDoesNotPersist verifies that semantic dry-run
++// may evaluate candidates but never writes a relation or relation sync mutation.
++func TestScanProject_Semantic_DryRunDoesNotPersist(t *testing.T) {
++	s := newTestStore(t)
++	seedSimilarPair(t, s, "sem-dry-run-project")
++
++	runner := &routingRunner{runners: []SemanticRunner{&verdictRunner{
++		verdict: SemanticVerdict{
++			Relation:   "compatible",
++			Confidence: 0.9,
++			Reasoning:  "both discuss JWT auth",
++			Model:      "haiku",
++		},
++	}}}
++
++	beforeRelations, err := s.CountRelations(ListRelationsOptions{Project: "sem-dry-run-project"})
++	if err != nil {
++		t.Fatalf("CountRelations before scan: %v", err)
++	}
++	beforeMutations, err := s.CountRelationSyncMutations()
++	if err != nil {
++		t.Fatalf("CountRelationSyncMutations before scan: %v", err)
++	}
++
++	result, err := s.ScanProject(ScanOptions{
++		Project:        "sem-dry-run-project",
++		Apply:          false,
++		Semantic:       true,
++		Concurrency:    1,
++		TimeoutPerCall: 5 * time.Second,
++		MaxSemantic:    10,
++		Runner:         runner,
++		BuildPrompt:    identityPromptBuilder,
++	})
++	if err != nil {
++		t.Fatalf("ScanProject: %v", err)
++	}
++	if !result.DryRun {
++		t.Fatal("expected DryRun=true")
++	}
++	if runner.callIdx == 0 {
++		t.Fatal("expected dry-run to evaluate at least one semantic candidate")
++	}
++
++	afterRelations, err := s.CountRelations(ListRelationsOptions{Project: "sem-dry-run-project"})
++	if err != nil {
++		t.Fatalf("CountRelations after scan: %v", err)
++	}
++	afterMutations, err := s.CountRelationSyncMutations()
++	if err != nil {
++		t.Fatalf("CountRelationSyncMutations after scan: %v", err)
++	}
++	if afterRelations != beforeRelations {
++		t.Errorf("semantic dry-run persisted relations: before=%d after=%d", beforeRelations, afterRelations)
++	}
++	if afterMutations != beforeMutations {
++		t.Errorf("semantic dry-run enqueued relation sync mutations: before=%d after=%d", beforeMutations, afterMutations)
++	}
++}
++
+ // ─── C.5b — TestScanProject_Semantic_NotConflictSkipped ──────────────────────
+ 
+ // TestScanProject_Semantic_NotConflictSkipped verifies that verdicts of
 diff --git a/internal/store/store.go b/internal/store/store.go
 index 9c6537b..41ce8d8 100644
 --- a/internal/store/store.go

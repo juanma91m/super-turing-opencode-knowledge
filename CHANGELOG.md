@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- corrige `conflicts scan --semantic` para que el dry-run no persista relaciones ni mutaciones de sync,
+- agrega ayuda real para `engram conflicts scan --help`,
+- hace idempotentes los summaries por sesión mediante `session/<session-id>/summary`,
+- agrega un plugin thin que propaga el `sessionID` real de OpenCode al summary,
+- evita exports auxiliares en plugins auto-descubiertos, que OpenCode intentaría invocar como plugin factories durante el arranque,
+- permite que `mem_session_summary` registre un `sessionID` real recién inyectado cuando todavía no existe en SQLite, sin relajar el contrato estricto de `mem_save`,
+- alinea la superficie MCP operativa con adjudicación, detección de proyecto, diagnóstico y review, retirando `mem_delete` del wiring por defecto.
+
 ## 0.3.1
 
 - la instalación portable usa `local-only` por defecto y deja Engram Cloud como opt-in explícito,
