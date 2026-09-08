@@ -44,13 +44,23 @@ export ENGRAM_CLOUD_TOKEN='<sync token>'
 
 engram cloud status
 engram cloud enroll super-turing-opencode-knowledge
-engram cloud upgrade doctor --project super-turing-opencode-knowledge
+engram cloud upgrade doctor --project super-turing-opencode-knowledge --json
 engram cloud upgrade repair --project super-turing-opencode-knowledge --dry-run
 ```
 
-Si el doctor reporta metadata legacy, revisar el payload y el backup local antes
-de ejecutar cualquier `--apply`. El addon no automatiza reparaciones. Solo con
-aprobación explícita:
+`doctor` y `repair --dry-run` abren el SQLite existente en `mode=ro`: no ejecutan
+migraciones, startup repair, `ensureSyncState` ni checkpoints de upgrade. La
+salida JSON identifica metadata legacy por `seq` y `payload_sha256`, sin exponer
+el payload crudo.
+
+Backlog legacy de un proyecto unenrolled es informativo y no bloquea operaciones
+Cloud actuales. El proyecto seguirá apareciendo como no listo para bootstrap por
+falta de enrollment, pero ese backlog no es motivo para enrolarlo ni repararlo.
+En proyectos enrolled, los mismos defectos sí bloquean replicación.
+
+Si el doctor de un proyecto enrolled reporta metadata legacy, revisar la
+secuencia/hash y el backup local antes de ejecutar cualquier `--apply`. El addon
+no automatiza reparaciones. Solo con aprobación explícita:
 
 ```bash
 engram cloud upgrade repair --project super-turing-opencode-knowledge --apply

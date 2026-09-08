@@ -1,7 +1,18 @@
 diff --git a/DOCS.md b/DOCS.md
-index a0971d2..73ddfe6 100644
+index a0971d2..fc7b6c5 100644
 --- a/DOCS.md
 +++ b/DOCS.md
+@@ -542,8 +542,8 @@ Inspect or replay the `sync_apply_deferred` queue.
+ - `engram cloud enroll <project>` — enroll one project for cloud replication
+ - `engram cloud config --server <url>` — persist cloud server URL to `~/.engram/cloud.json`
+ - `engram cloud serve` — run cloud backend API + dashboard (`/dashboard`) using Postgres config from env
+-- `engram cloud upgrade doctor --project <project>` — deterministic read-only readiness diagnosis (`ready|blocked`, class/reason)
+-- `engram cloud upgrade repair --project <project> [--dry-run|--apply]` — deterministic local-safe repair planner/apply (no remote mutation)
++- `engram cloud upgrade doctor --project <project> [--json]` — deterministic strict read-only readiness diagnosis (`ready|blocked`, class/reason). JSON includes legacy mutation sequence/hash evidence without raw payloads; unenrolled legacy backlog is reported but does not replace the enrollment readiness reason
++- `engram cloud upgrade repair --project <project> [--dry-run|--apply]` — deterministic local-safe repair planner/apply (no remote mutation); the default/`--dry-run` path opens SQLite in read-only mode and only `--apply` may persist local changes
+ - `engram cloud upgrade bootstrap --project <project> [--resume]` — resumable checkpointed enroll/push/verify flow
+ - `engram cloud upgrade status --project <project>` — show upgrade stage/class/reason
+ - `engram cloud upgrade rollback --project <project>` — restore pre-upgrade local snapshot before `bootstrap_verified`; blocked afterwards
 @@ -813,7 +813,7 @@ Returns success even when cwd is ambiguous — empty `project` + non-empty `avai
  
  ### mem_search
@@ -73,6 +84,116 @@ index a0971d2..73ddfe6 100644
  
  ### Timeline (Progressive Disclosure)
  
+diff --git a/README.md b/README.md
+index 6d0c041..4b9defd 100644
+--- a/README.md
++++ b/README.md
+@@ -212,7 +212,7 @@ Then restart Claude Code so it reloads the Engram MCP subprocess and refreshed h
+ **Upgrade flow for existing local databases** (diagnose → repair → bootstrap → status):
+ 
+ ```bash
+-engram cloud upgrade doctor --project smoke-project        # read-only readiness check
++engram cloud upgrade doctor --project smoke-project --json # strict read-only readiness + safe legacy evidence
+ engram cloud upgrade repair --project smoke-project --dry-run
+ engram cloud upgrade repair --project smoke-project --apply
+ engram cloud upgrade bootstrap --project smoke-project     # resumable enroll + push + verify
+diff --git a/cmd/engram/cloud.go b/cmd/engram/cloud.go
+index 4bcc978..59bb1d7 100644
+--- a/cmd/engram/cloud.go
++++ b/cmd/engram/cloud.go
+@@ -322,14 +322,15 @@ func cmdCloudUpgrade(cfg store.Config) {
+ 
+ func cmdCloudUpgradeDoctor(cfg store.Config) {
+ 	project := parseCloudUpgradeProjectArg(os.Args[4:])
++	jsonOut := hasCloudUpgradeFlag(os.Args[4:], "--json")
+ 	if project == "" {
+-		fmt.Fprintln(os.Stderr, "usage: engram cloud upgrade doctor --project <name>")
++		fmt.Fprintln(os.Stderr, "usage: engram cloud upgrade doctor --project <name> [--json]")
+ 		fmt.Fprintln(os.Stderr, "error: --project is required")
+ 		exitFunc(1)
+ 		return
+ 	}
+ 
+-	s, err := storeNew(cfg)
++	s, err := storeNewReadOnly(cfg)
+ 	if err != nil {
+ 		fatal(err)
+ 		return
+@@ -371,15 +372,15 @@ func cmdCloudUpgradeDoctor(cfg store.Config) {
+ 		fatal(fmt.Errorf("cloud upgrade doctor legacy mutation diagnosis: %w", err))
+ 		return
+ 	}
+-	if legacyReport.BlockedCount > 0 {
+-		first := legacyReport.Findings[0]
++	if enrolled && legacyReport.BlockedCount > 0 {
++		first := firstBlockedLegacyMutationFinding(legacyReport)
+ 		report = engramsync.UpgradeDiagnosisReport{
+ 			Status:  engramsync.UpgradeStatusBlocked,
+ 			Class:   engramsync.UpgradeReasonClassBlocked,
+ 			Code:    store.UpgradeReasonBlockedLegacyMutationManual,
+ 			Message: fmt.Sprintf("manual-action-required: %s (seq=%d entity=%s op=%s)", first.Message, first.Seq, first.Entity, first.Op),
+ 		}
+-	} else if legacyReport.RepairableCount > 0 {
++	} else if enrolled && legacyReport.RepairableCount > 0 {
+ 		report = engramsync.UpgradeDiagnosisReport{
+ 			Status:  engramsync.UpgradeStatusBlocked,
+ 			Class:   engramsync.UpgradeReasonClassRepairable,
+@@ -388,17 +389,23 @@ func cmdCloudUpgradeDoctor(cfg store.Config) {
+ 		}
+ 	}
+ 
+-	stage := store.UpgradeStageDoctorBlocked
+-	if report.Status == engramsync.UpgradeStatusReady {
+-		stage = store.UpgradeStageDoctorReady
++	if jsonOut {
++		encoded, err := jsonMarshalIndent(map[string]any{
++			"project":          project,
++			"status":           report.Status,
++			"class":            report.Class,
++			"reason_code":      report.Code,
++			"message":          report.Message,
++			"project_enrolled": enrolled,
++			"legacy_mutations": legacyReport,
++		}, "", "  ")
++		if err != nil {
++			fatal(err)
++			return
++		}
++		fmt.Println(string(encoded))
++		return
+ 	}
+-	_ = s.SaveCloudUpgradeState(store.CloudUpgradeState{
+-		Project:          project,
+-		Stage:            stage,
+-		RepairClass:      report.Class,
+-		LastErrorCode:    report.Code,
+-		LastErrorMessage: report.Message,
+-	})
+ 
+ 	fmt.Printf("project: %s\n", project)
+ 	fmt.Printf("status: %s\n", report.Status)
+@@ -413,7 +420,7 @@ func cloudUpgradePolicyDenied(s *store.Store, project string) (bool, error) {
+ 		targets = append(targets, constants.TargetKeyCloud)
+ 	}
+ 	for _, targetKey := range targets {
+-		state, err := s.GetSyncState(targetKey)
++		state, err := s.FindSyncState(targetKey)
+ 		if err != nil {
+ 			return false, err
+ 		}
+@@ -450,7 +457,11 @@ func cmdCloudUpgradeRepair(cfg store.Config) {
+ 		return
+ 	}
+ 	apply := hasCloudUpgradeFlag(os.Args[4:], "--apply")
+-	s, err := storeNew(cfg)
++	openStore := storeNewReadOnly
++	if apply {
++		openStore = storeNew
++	}
++	s, err := openStore(cfg)
+ 	if err != nil {
+ 		fatal(err)
+ 		return
 diff --git a/cmd/engram/conflicts.go b/cmd/engram/conflicts.go
 index aa1799f..2a02600 100644
 --- a/cmd/engram/conflicts.go
@@ -148,6 +269,442 @@ index e1ae181..67f99c2 100644
  // TestCmdConflictsScan_Apply verifies `engram conflicts scan --apply` inserts rows
  // and reports an inserted count.
  func TestCmdConflictsScan_Apply(t *testing.T) {
+diff --git a/cmd/engram/doctor.go b/cmd/engram/doctor.go
+index fcb30c0..b6bdeb8 100644
+--- a/cmd/engram/doctor.go
++++ b/cmd/engram/doctor.go
+@@ -51,7 +51,19 @@ func cmdDoctor(cfg store.Config) {
+ 	}
+ 
+ 	project, _ = store.NormalizeProject(project)
+-	s, err := storeNew(cfg)
++	if strings.TrimSpace(check) != "" {
++		if _, err := diagnostic.DefaultRegistry().Lookup(check); err != nil {
++			report := diagnostic.ErrorReport(project, err)
++			if jsonOut {
++				writeDoctorJSON(report)
++			} else {
++				fmt.Fprintf(os.Stderr, "engram doctor failed: %s\n", err)
++			}
++			exitFunc(1)
++			return
++		}
++	}
++	s, err := storeNewReadOnly(cfg)
+ 	if err != nil {
+ 		fatal(err)
+ 		return
+@@ -144,7 +156,11 @@ func cmdDoctorRepair(cfg store.Config) {
+ 		return
+ 	}
+ 
+-	s, err := storeNew(cfg)
++	openStore := storeNewReadOnly
++	if mode == diagnostic.RepairModeApply {
++		openStore = storeNew
++	}
++	s, err := openStore(cfg)
+ 	if err != nil {
+ 		fatal(err)
+ 		return
+diff --git a/cmd/engram/doctor_test.go b/cmd/engram/doctor_test.go
+index 26b9344..1f34510 100644
+--- a/cmd/engram/doctor_test.go
++++ b/cmd/engram/doctor_test.go
+@@ -2,12 +2,16 @@ package main
+ 
+ import (
+ 	"context"
++	"crypto/sha256"
+ 	"database/sql"
++	"encoding/hex"
+ 	"encoding/json"
++	"fmt"
+ 	"os"
+ 	"os/exec"
+ 	"path/filepath"
+ 	"reflect"
++	"sort"
+ 	"strings"
+ 	"testing"
+ 
+@@ -277,6 +281,17 @@ func TestCmdDoctorJSONMatchesMemDoctorEnvelope(t *testing.T) {
+ func TestCmdDoctorSyncMutationRequiredFieldsBlockedEnvelope(t *testing.T) {
+ 	cfg := testConfig(t)
+ 	seedDoctorSession(t, cfg, "manual-save-engram", "engram", "/work/engram")
++	s, err := store.New(cfg)
++	if err != nil {
++		t.Fatalf("store.New: %v", err)
++	}
++	if err := s.EnrollProject("engram"); err != nil {
++		_ = s.Close()
++		t.Fatalf("EnrollProject: %v", err)
++	}
++	if err := s.Close(); err != nil {
++		t.Fatalf("close store: %v", err)
++	}
+ 	seedDoctorPendingMutation(t, cfg, "engram", store.SyncEntityObservation, "obs-missing", store.SyncOpUpsert, `{"sync_id":"obs-missing"}`)
+ 
+ 	withArgs(t, "engram", "doctor", "--json", "--project", "engram", "--check", "sync_mutation_required_fields")
+@@ -305,11 +320,282 @@ func TestCmdDoctorSyncMutationRequiredFieldsBlockedEnvelope(t *testing.T) {
+ 		t.Fatalf("expected one finding, got %v", findings)
+ 	}
+ 	finding := findings[0].(map[string]any)
+-	if finding["reason_code"] != "sync_mutation_payload_missing_required_fields" || finding["requires_confirmation"] != true {
++	if finding["reason_code"] != store.UpgradeReasonBlockedLegacyMutationManual || finding["requires_confirmation"] != true {
+ 		t.Fatalf("unexpected finding: %v", finding)
+ 	}
+ 	evidence := finding["evidence"].(map[string]any)
+-	if evidence["entity"] != store.SyncEntityObservation || evidence["entity_key"] != "obs-missing" {
++	if evidence["entity"] != store.SyncEntityObservation || evidence["entity_key"] != "obs-missing" || evidence["project_enrolled"] != true || len(evidence["payload_sha256"].(string)) != 64 {
+ 		t.Fatalf("unexpected evidence: %v", evidence)
+ 	}
+ }
++
++func TestCmdCloudUpgradeDoctorIsReadOnlyAndReportsLegacyEvidence(t *testing.T) {
++	stubExitWithPanic(t)
++	stubRuntimeHooks(t)
++	cfg := testConfig(t)
++	seedLegacySessionMutation(t, cfg, "legacy-project")
++	if err := saveCloudConfig(cfg, &cloudConfig{ServerURL: "https://cloud.example.test"}); err != nil {
++		t.Fatalf("save cloud config: %v", err)
++	}
++
++	before := snapshotApplicationTables(t, cfg)
++	var firstOutput string
++	for attempt := 0; attempt < 2; attempt++ {
++		withArgs(t, "engram", "cloud", "upgrade", "doctor", "--project", "legacy-project", "--json")
++		stdout, stderr, recovered := captureOutputAndRecover(t, func() { cmdCloud(cfg) })
++		if recovered != nil || stderr != "" {
++			t.Fatalf("doctor should succeed, panic=%v stderr=%q", recovered, stderr)
++		}
++		if attempt == 0 {
++			firstOutput = stdout
++		} else if stdout != firstOutput {
++			t.Fatalf("doctor output changed across identical runs\nfirst=%s\nsecond=%s", firstOutput, stdout)
++		}
++		if after := snapshotApplicationTables(t, cfg); after != before {
++			t.Fatalf("doctor mutated application tables: before=%s after=%s", before, after)
++		}
++	}
++
++	var report struct {
++		Project         string `json:"project"`
++		Status          string `json:"status"`
++		Class           string `json:"class"`
++		ReasonCode      string `json:"reason_code"`
++		ProjectEnrolled bool   `json:"project_enrolled"`
++		LegacyMutations struct {
++			RepairableCount int `json:"repairable_count"`
++			BlockedCount    int `json:"blocked_count"`
++			Findings        []struct {
++				Seq           int64  `json:"seq"`
++				PayloadSHA256 string `json:"payload_sha256"`
++			} `json:"findings"`
++		} `json:"legacy_mutations"`
++	}
++	if err := json.Unmarshal([]byte(firstOutput), &report); err != nil {
++		t.Fatalf("doctor JSON invalid: %v\n%s", err, firstOutput)
++	}
++	if report.Project != "legacy-project" || report.ProjectEnrolled {
++		t.Fatalf("unexpected project/enrollment: %+v", report)
++	}
++	if report.Status != "blocked" || report.Class != "repairable" || report.ReasonCode != "upgrade_repairable_unenrolled" {
++		t.Fatalf("unenrolled legacy backlog must remain report-only, got %+v", report)
++	}
++	if report.LegacyMutations.RepairableCount != 1 || report.LegacyMutations.BlockedCount != 0 || len(report.LegacyMutations.Findings) != 1 {
++		t.Fatalf("unexpected legacy report: %+v", report.LegacyMutations)
++	}
++	if report.LegacyMutations.Findings[0].Seq <= 0 || len(report.LegacyMutations.Findings[0].PayloadSHA256) != 64 {
++		t.Fatalf("missing safe sequence/hash evidence: %+v", report.LegacyMutations.Findings[0])
++	}
++	if strings.Contains(firstOutput, `"payload"`) || strings.Contains(firstOutput, "/work/legacy-project") {
++		t.Fatalf("doctor JSON leaked mutation payload content: %s", firstOutput)
++	}
++}
++
++func TestCmdCloudUpgradeDoctorMixedFindingsPointsToFirstBlockedMutation(t *testing.T) {
++	stubExitWithPanic(t)
++	stubRuntimeHooks(t)
++	cfg := testConfig(t)
++	seedDoctorSession(t, cfg, "legacy-s1", "legacy-project", "/work/legacy-project")
++	s, err := store.New(cfg)
++	if err != nil {
++		t.Fatalf("open store: %v", err)
++	}
++	if err := s.EnrollProject("legacy-project"); err != nil {
++		_ = s.Close()
++		t.Fatalf("enroll project: %v", err)
++	}
++	if err := s.Close(); err != nil {
++		t.Fatalf("close store: %v", err)
++	}
++	seedDoctorPendingMutation(t, cfg, "legacy-project", store.SyncEntitySession, "legacy-s1", store.SyncOpUpsert, `{"id":"legacy-s1","project":"legacy-project"}`)
++	seedDoctorPendingMutation(t, cfg, "legacy-project", store.SyncEntitySession, "missing-local-session", store.SyncOpUpsert, `{"id":"missing-local-session","project":"legacy-project"}`)
++	if err := saveCloudConfig(cfg, &cloudConfig{ServerURL: "https://cloud.example.test"}); err != nil {
++		t.Fatalf("save cloud config: %v", err)
++	}
++
++	withArgs(t, "engram", "cloud", "upgrade", "doctor", "--project", "legacy-project", "--json")
++	stdout, stderr, recovered := captureOutputAndRecover(t, func() { cmdCloud(cfg) })
++	if recovered != nil || stderr != "" {
++		t.Fatalf("doctor should succeed, panic=%v stderr=%q", recovered, stderr)
++	}
++	var report map[string]any
++	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
++		t.Fatalf("doctor JSON invalid: %v\n%s", err, stdout)
++	}
++	legacy := report["legacy_mutations"].(map[string]any)
++	if legacy["repairable_count"] != float64(1) || legacy["blocked_count"] != float64(1) {
++		t.Fatalf("expected one repairable and one blocked finding, got %v", legacy)
++	}
++	var blockedSeq float64
++	for _, raw := range legacy["findings"].([]any) {
++		finding := raw.(map[string]any)
++		if finding["repairable"] == false {
++			blockedSeq = finding["seq"].(float64)
++			break
++		}
++	}
++	if blockedSeq == 0 || !strings.Contains(report["message"].(string), fmt.Sprintf("seq=%d", int64(blockedSeq))) {
++		t.Fatalf("doctor message must point to first blocked finding: %v", report)
++	}
++}
++
++func TestCmdCloudUpgradeRepairDryRunIsReadOnly(t *testing.T) {
++	stubExitWithPanic(t)
++	stubRuntimeHooks(t)
++	cfg := testConfig(t)
++	seedLegacySessionMutation(t, cfg, "legacy-project")
++
++	before := snapshotApplicationTables(t, cfg)
++	for attempt := 0; attempt < 2; attempt++ {
++		withArgs(t, "engram", "cloud", "upgrade", "repair", "--project", "legacy-project", "--dry-run")
++		_, stderr, recovered := captureOutputAndRecover(t, func() { cmdCloud(cfg) })
++		if recovered != nil || stderr != "" {
++			t.Fatalf("repair dry-run should succeed, panic=%v stderr=%q", recovered, stderr)
++		}
++		if after := snapshotApplicationTables(t, cfg); after != before {
++			t.Fatalf("repair dry-run mutated application tables: before=%s after=%s", before, after)
++		}
++	}
++}
++
++func TestCmdDoctorClassifiesLegacyMutationsByEnrollmentWithoutWriting(t *testing.T) {
++	tests := []struct {
++		name       string
++		enrolled   bool
++		wantStatus string
++		wantResult string
++		wantLevel  string
++	}{
++		{name: "unenrolled backlog is warning", wantStatus: "warning", wantResult: "warning", wantLevel: "warning"},
++		{name: "enrolled backlog blocks", enrolled: true, wantStatus: "blocked", wantResult: "blocked", wantLevel: "blocking"},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			cfg := testConfig(t)
++			project := "legacy-project"
++			seedLegacySessionMutation(t, cfg, project)
++			if tc.enrolled {
++				s, err := store.New(cfg)
++				if err != nil {
++					t.Fatalf("open store: %v", err)
++				}
++				if err := s.EnrollProject(project); err != nil {
++					_ = s.Close()
++					t.Fatalf("enroll project: %v", err)
++				}
++				_ = s.Close()
++				// Enrollment backfills canonical rows, so add one legacy row after it.
++				seedDoctorPendingMutation(t, cfg, project, store.SyncEntitySession, "legacy-s1", store.SyncOpUpsert, `{"id":"legacy-s1","project":"legacy-project"}`)
++			}
++
++			before := snapshotApplicationTables(t, cfg)
++			withArgs(t, "engram", "doctor", "--json", "--project", project, "--check", "sync_mutation_required_fields")
++			stdout, stderr := captureOutput(t, func() { cmdDoctor(cfg) })
++			if stderr != "" {
++				t.Fatalf("stderr=%q", stderr)
++			}
++			if after := snapshotApplicationTables(t, cfg); after != before {
++				t.Fatalf("doctor mutated application tables: before=%s after=%s", before, after)
++			}
++
++			var report map[string]any
++			if err := json.Unmarshal([]byte(stdout), &report); err != nil {
++				t.Fatalf("doctor JSON invalid: %v\n%s", err, stdout)
++			}
++			if report["status"] != tc.wantStatus {
++				t.Fatalf("status=%v want=%s report=%v", report["status"], tc.wantStatus, report)
++			}
++			check := report["checks"].([]any)[0].(map[string]any)
++			if check["result"] != tc.wantResult || check["severity"] != tc.wantLevel {
++				t.Fatalf("unexpected check classification: %v", check)
++			}
++			finding := check["findings"].([]any)[0].(map[string]any)
++			evidence := finding["evidence"].(map[string]any)
++			if evidence["project_enrolled"] != tc.enrolled || len(evidence["payload_sha256"].(string)) != 64 {
++				t.Fatalf("unexpected safe evidence: %v", evidence)
++			}
++			if strings.Contains(stdout, `"payload"`) || strings.Contains(stdout, "/work/legacy-project") {
++				t.Fatalf("doctor JSON leaked payload content: %s", stdout)
++			}
++		})
++	}
++}
++
++func seedLegacySessionMutation(t *testing.T, cfg store.Config, project string) {
++	t.Helper()
++	seedDoctorSession(t, cfg, "legacy-s1", project, "/work/"+project)
++	seedDoctorPendingMutation(t, cfg, project, store.SyncEntitySession, "legacy-s1", store.SyncOpUpsert, `{"id":"legacy-s1","project":"`+project+`"}`)
++}
++
++func snapshotApplicationTables(t *testing.T, cfg store.Config) string {
++	t.Helper()
++	dsn := "file:" + filepath.ToSlash(filepath.Join(cfg.DataDir, "engram.db")) + "?mode=ro"
++	db, err := sql.Open("sqlite", dsn)
++	if err != nil {
++		t.Fatalf("open read-only snapshot: %v", err)
++	}
++	defer db.Close()
++
++	tableRows, err := db.Query(`SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name`)
++	if err != nil {
++		t.Fatalf("list tables: %v", err)
++	}
++	var tables []string
++	for tableRows.Next() {
++		var table string
++		if err := tableRows.Scan(&table); err != nil {
++			_ = tableRows.Close()
++			t.Fatalf("scan table: %v", err)
++		}
++		tables = append(tables, table)
++	}
++	if err := tableRows.Close(); err != nil {
++		t.Fatalf("close table rows: %v", err)
++	}
++
++	h := sha256.New()
++	for _, table := range tables {
++		quoted := `"` + strings.ReplaceAll(table, `"`, `""`) + `"`
++		rows, err := db.Query("SELECT * FROM " + quoted)
++		if err != nil {
++			t.Fatalf("snapshot table %s: %v", table, err)
++		}
++		columns, err := rows.Columns()
++		if err != nil {
++			_ = rows.Close()
++			t.Fatalf("columns for %s: %v", table, err)
++		}
++		var encodedRows []string
++		for rows.Next() {
++			values := make([]any, len(columns))
++			pointers := make([]any, len(columns))
++			for i := range values {
++				pointers[i] = &values[i]
++			}
++			if err := rows.Scan(pointers...); err != nil {
++				_ = rows.Close()
++				t.Fatalf("scan %s: %v", table, err)
++			}
++			parts := make([]string, len(values))
++			for i, value := range values {
++				switch typed := value.(type) {
++				case []byte:
++					parts[i] = "bytes:" + hex.EncodeToString(typed)
++				default:
++					parts[i] = fmt.Sprintf("%T:%v", value, value)
++				}
++			}
++			encodedRows = append(encodedRows, strings.Join(parts, "\x1f"))
++		}
++		if err := rows.Err(); err != nil {
++			_ = rows.Close()
++			t.Fatalf("iterate %s: %v", table, err)
++		}
++		if err := rows.Close(); err != nil {
++			t.Fatalf("close %s rows: %v", table, err)
++		}
++		sort.Strings(encodedRows)
++		_, _ = fmt.Fprintf(h, "%s\n%s\n", table, strings.Join(encodedRows, "\n"))
++	}
++	return hex.EncodeToString(h.Sum(nil))
++}
+diff --git a/cmd/engram/main.go b/cmd/engram/main.go
+index 730d783..9907254 100644
+--- a/cmd/engram/main.go
++++ b/cmd/engram/main.go
+@@ -61,9 +61,10 @@ func init() {
+ }
+ 
+ var (
+-	storeNew      = store.New
+-	newHTTPServer = server.New
+-	startHTTP     = (*server.Server).Start
++	storeNew         = store.New
++	storeNewReadOnly = store.NewReadOnly
++	newHTTPServer    = server.New
++	startHTTP        = (*server.Server).Start
+ 
+ 	newMCPServer           = mcp.NewServer
+ 	newMCPServerWithTools  = mcp.NewServerWithTools
+diff --git a/cmd/engram/main_extra_test.go b/cmd/engram/main_extra_test.go
+index f16d06b..db79d39 100644
+--- a/cmd/engram/main_extra_test.go
++++ b/cmd/engram/main_extra_test.go
+@@ -132,6 +132,7 @@ func stubExitWithPanic(t *testing.T) {
+ func stubRuntimeHooks(t *testing.T) {
+ 	t.Helper()
+ 	oldStoreNew := storeNew
++	oldStoreNewReadOnly := storeNewReadOnly
+ 	oldNewHTTPServer := newHTTPServer
+ 	oldStartHTTP := startHTTP
+ 	oldNewMCPServer := newMCPServer
+@@ -158,6 +159,7 @@ func stubRuntimeHooks(t *testing.T) {
+ 	oldCloudDaemonProbe := cloudDaemonProbe
+ 
+ 	storeNew = store.New
++	storeNewReadOnly = store.NewReadOnly
+ 	newHTTPServer = func(s *store.Store, _ int) *engramsrv.Server { return engramsrv.New(s, 0) }
+ 	startHTTP = func(_ *engramsrv.Server) error { return nil }
+ 	newMCPServer = func(s *store.Store) *mcpserver.MCPServer {
+@@ -205,6 +207,7 @@ func stubRuntimeHooks(t *testing.T) {
+ 
+ 	t.Cleanup(func() {
+ 		storeNew = oldStoreNew
++		storeNewReadOnly = oldStoreNewReadOnly
+ 		newHTTPServer = oldNewHTTPServer
+ 		startHTTP = oldStartHTTP
+ 		newMCPServer = oldNewMCPServer
+@@ -856,6 +859,13 @@ func TestCmdCloudUpgradeDoctorRequiresProjectAndIsDeterministic(t *testing.T) {
+ 	if err := saveCloudConfig(cfg, &cloudConfig{ServerURL: "https://cloud.example.test"}); err != nil {
+ 		t.Fatalf("save cloud config: %v", err)
+ 	}
++	s, err := store.New(cfg)
++	if err != nil {
++		t.Fatalf("initialize store: %v", err)
++	}
++	if err := s.Close(); err != nil {
++		t.Fatalf("close initialized store: %v", err)
++	}
+ 
+ 	t.Run("missing project fails loudly", func(t *testing.T) {
+ 		withArgs(t, "engram", "cloud", "upgrade", "doctor")
+@@ -1184,6 +1194,13 @@ func TestCmdCloudUpgradeRepairStatusAndRollbackBranches(t *testing.T) {
+ 
+ 	t.Run("repair dry-run stays non-applied", func(t *testing.T) {
+ 		cfg := testConfig(t)
++		s, err := store.New(cfg)
++		if err != nil {
++			t.Fatalf("initialize store: %v", err)
++		}
++		if err := s.Close(); err != nil {
++			t.Fatalf("close initialized store: %v", err)
++		}
+ 		withArgs(t, "engram", "cloud", "upgrade", "repair", "--project", "proj-a")
+ 		stdout, stderr, recovered := captureOutputAndRecover(t, func() { cmdCloud(cfg) })
+ 		if recovered != nil || stderr != "" {
 diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
 index f212f39..8358335 100644
 --- a/docs/ARCHITECTURE.md
@@ -160,6 +717,151 @@ index f212f39..8358335 100644
  - `mem_save` and `mem_search` expose lifecycle metadata: computed `state` (`active` or `needs_review`) and `review_after` when a review cycle applies.
  - `mem_review` supports `action="list"` (`project`, `limit`) and `action="mark_reviewed"` (`observation_id`). Marking reviewed is local-only for now because `review_after` is intentionally not part of sync payloads in this phase.
  - Exact dedupe prevents repeated inserts in a rolling window (hash + project + scope + type + title)
+diff --git a/docs/DOCTOR.md b/docs/DOCTOR.md
+index 6c776b5..58cbcf5 100644
+--- a/docs/DOCTOR.md
++++ b/docs/DOCTOR.md
+@@ -1,6 +1,6 @@
+ # Engram Doctor
+ 
+-`engram doctor` runs read-only operational diagnostics against the local SQLite store. It detects, explains, and suggests safe next steps; the base diagnostic command does **not** repair data, apply migrations, delete rows, or mutate sync cursors.
++`engram doctor` opens the existing local SQLite database in `mode=ro` and runs read-only operational diagnostics. It detects, explains, and suggests safe next steps; the base diagnostic command does **not** create a database, repair data, apply migrations, delete rows, checkpoint WAL, or mutate sync/cloud state.
+ 
+ ## CLI
+ 
+@@ -61,12 +61,12 @@ The CLI `--json` and MCP tool return:
+ 
+ - `session_project_directory_mismatch` — warns when `sessions.project` disagrees with the project inferred from trusted repository evidence for the session directory. The MVP trusts `git_remote` and `git_root` only; it ignores basename fallback, ambiguous workspaces, missing directories, and child-repo auto-promotion to avoid noisy false positives.
+ - `manual_session_name_project_mismatch` — warns when a `manual-save-{suffix}` session name disagrees with `sessions.project`.
+-- `sync_mutation_required_fields` — blocks when a pending `sync_mutations.payload` is missing required fields.
+-- `sqlite_lock_contention` — warns on conservative SQLite contention signals; returns an error if lock state cannot be evaluated.
++- `sync_mutation_required_fields` — reuses the Cloud repair evaluator for pending legacy mutations. Invalid entries block only when their project is enrolled (or the entry is global); unenrolled project backlog is a report-only warning. Evidence includes sequence and payload SHA-256, never the raw payload.
++- `sqlite_lock_contention` — warns on conservative SQLite contention signals. Strict read-only CLI runs skip the mutating WAL checkpoint probe and report its result as unknown/warning rather than a false healthy state; the check returns an error if even the non-mutating lock metadata cannot be read.
+ 
+ ## Safety
+ 
+-Plain `engram doctor` remains diagnostic-only. Findings that imply data movement set `requires_confirmation=true` so agents know a human must review evidence before repair.
++Plain `engram doctor` remains diagnostic-only and requires an existing Engram database. Findings that imply data movement for an enrolled project set `requires_confirmation=true` so agents know a human must review evidence before repair. Unenrolled legacy backlog does not justify enrollment by itself and remains `warning` with `requires_confirmation=false`.
+ 
+ `engram doctor repair` is intentionally narrow and local-first: local SQLite remains the source of truth, and cloud/sync repair is out of scope. The repair MVP only supports project reclassification for:
+ 
+diff --git a/internal/diagnostic/checks.go b/internal/diagnostic/checks.go
+index 5c79cf0..25b997e 100644
+--- a/internal/diagnostic/checks.go
++++ b/internal/diagnostic/checks.go
+@@ -3,6 +3,7 @@ package diagnostic
+ import (
+ 	"context"
+ 	"os"
++	"sort"
+ 	"strings"
+ 
+ 	projectpkg "github.com/Gentleman-Programming/engram/internal/project"
+@@ -138,26 +139,51 @@ func (c SyncMutationRequiredFieldsCheck) Run(ctx context.Context, scope Scope) (
+ 	if err != nil {
+ 		return CheckResult{}, err
+ 	}
+-	findings := make([]Finding, 0)
++	projects := make(map[string]struct{})
+ 	for _, mutation := range mutations {
+-		validation := store.ValidateSyncMutationPayload(mutation.Entity, mutation.Op, mutation.Payload, mutation.EntityKey)
+-		if validation.ReasonCode == "" {
+-			continue
++		projects[strings.TrimSpace(mutation.Project)] = struct{}{}
++	}
++	orderedProjects := make([]string, 0, len(projects))
++	for project := range projects {
++		orderedProjects = append(orderedProjects, project)
++	}
++	sort.Strings(orderedProjects)
++
++	findings := make([]Finding, 0)
++	for _, project := range orderedProjects {
++		legacyReport, err := scope.Store.DiagnoseCloudUpgradeLegacyMutations(project)
++		if err != nil {
++			return CheckResult{}, err
+ 		}
+-		nextStep := "Run `engram cloud upgrade doctor` and inspect the mutation payload before any manual repair."
+-		if strings.TrimSpace(scope.Project) != "" {
+-			nextStep = "Run `engram cloud upgrade doctor --project " + scope.Project + "` and inspect the mutation payload before any manual repair."
++		enrolled := project == ""
++		if project != "" {
++			enrolled, err = scope.Store.IsProjectEnrolled(project)
++			if err != nil {
++				return CheckResult{}, err
++			}
++		}
++		for _, legacy := range legacyReport.Findings {
++			severity := SeverityBlocking
++			why := "A pending sync mutation with invalid legacy metadata can block replication for an enrolled project and must fail loudly instead of being silently dropped."
++			nextStep := "Run `engram cloud upgrade doctor --project " + project + " --json` and inspect the sequence/hash evidence before any repair."
++			requiresConfirmation := true
++			if !enrolled {
++				severity = SeverityWarning
++				why = "This historical mutation cannot replicate while the project remains unenrolled, so it is report-only and does not block current cloud operations."
++				nextStep = "No action is required while the project remains unenrolled; do not enroll it solely to clear historical journal entries."
++				requiresConfirmation = false
++			}
++			findings = append(findings, Finding{
++				CheckID:              c.Code(),
++				Severity:             severity,
++				ReasonCode:           legacy.ReasonCode,
++				Message:              legacy.Message,
++				Why:                  why,
++				Evidence:             mustJSON(map[string]any{"seq": legacy.Seq, "target_key": legacy.TargetKey, "project": legacy.Project, "project_enrolled": enrolled, "entity": legacy.Entity, "op": legacy.Op, "entity_key": legacy.EntityKey, "repairable": legacy.Repairable, "payload_sha256": legacy.PayloadSHA256}),
++				SafeNextStep:         nextStep,
++				RequiresConfirmation: requiresConfirmation,
++			})
+ 		}
+-		findings = append(findings, Finding{
+-			CheckID:              c.Code(),
+-			Severity:             SeverityBlocking,
+-			ReasonCode:           validation.ReasonCode,
+-			Message:              validation.Message,
+-			Why:                  "A pending sync mutation with missing required fields can block safe cloud replication and must fail loudly instead of being silently dropped.",
+-			Evidence:             mustJSON(map[string]any{"seq": mutation.Seq, "target_key": mutation.TargetKey, "project": mutation.Project, "entity": mutation.Entity, "op": mutation.Op, "entity_key": mutation.EntityKey, "missing_fields": validation.MissingFields}),
+-			SafeNextStep:         nextStep,
+-			RequiresConfirmation: true,
+-		})
+ 	}
+ 	return resultFromFindings(c.Code(), map[string]any{"pending_mutations_evaluated": len(mutations)}, findings), nil
+ }
+@@ -173,6 +199,18 @@ func (c SQLiteLockContentionCheck) Run(ctx context.Context, scope Scope) (CheckR
+ 		return resultFromFindings(c.Code(), map[string]any{"probe": "failed"}, []Finding{finding}), nil
+ 	}
+ 	findings := make([]Finding, 0)
++	if snapshot.CheckpointProbe == "skipped_read_only" || snapshot.CheckpointLog < 0 || snapshot.CheckpointedFrames < 0 {
++		findings = append(findings, Finding{
++			CheckID:              c.Code(),
++			Severity:             SeverityWarning,
++			ReasonCode:           "sqlite_lock_probe_skipped_read_only",
++			Message:              "SQLite WAL checkpoint contention was not probed on the read-only diagnostic connection.",
++			Why:                  "A checkpoint could modify SQLite files, so strict read-only doctor reports contention as unknown instead of claiming a healthy lock state.",
++			Evidence:             mustJSON(snapshot),
++			SafeNextStep:         "No action is required without other contention symptoms; inspect active Engram processes before any operational intervention.",
++			RequiresConfirmation: false,
++		})
++	}
+ 	if snapshot.CheckpointBusy > 0 || snapshot.BusyTimeoutMS <= 0 {
+ 		findings = append(findings, Finding{
+ 			CheckID:              c.Code(),
+diff --git a/internal/diagnostic/diagnostic_test.go b/internal/diagnostic/diagnostic_test.go
+index cdf4110..6b68d4d 100644
+--- a/internal/diagnostic/diagnostic_test.go
++++ b/internal/diagnostic/diagnostic_test.go
+@@ -46,6 +46,12 @@ func TestSQLiteLockContentionBranches(t *testing.T) {
+ 			wantStatus: StatusWarning,
+ 			wantReason: "sqlite_lock_contention_detected",
+ 		},
++		{
++			name:       "read-only skipped checkpoint is warning",
++			snapshot:   store.SQLiteLockSnapshot{JournalMode: "wal", BusyTimeoutMS: 5000, CheckpointProbe: "skipped_read_only", CheckpointLog: -1, CheckpointedFrames: -1},
++			wantStatus: StatusWarning,
++			wantReason: "sqlite_lock_probe_skipped_read_only",
++		},
+ 		{
+ 			name:       "probe failure is error",
+ 			probeErr:   errors.New("probe unavailable"),
 diff --git a/internal/mcp/mcp.go b/internal/mcp/mcp.go
 index e1fb4d1..8839dd0 100644
 --- a/internal/mcp/mcp.go
@@ -803,6 +1505,37 @@ index 89fc21e..c5e7a1f 100644
  // ─── Phase 3: MCPConfig, Default Project, Normalization, Similar Warnings ────
  
  func TestNewServerWithConfig(t *testing.T) {
+diff --git a/internal/store/diagnostic.go b/internal/store/diagnostic.go
+index 9392485..c768b4c 100644
+--- a/internal/store/diagnostic.go
++++ b/internal/store/diagnostic.go
+@@ -37,6 +37,7 @@ type SyncMutationPayloadValidation struct {
+ type SQLiteLockSnapshot struct {
+ 	JournalMode        string `json:"journal_mode"`
+ 	BusyTimeoutMS      int    `json:"busy_timeout_ms"`
++	CheckpointProbe    string `json:"checkpoint_probe"`
+ 	CheckpointBusy     int    `json:"checkpoint_busy"`
+ 	CheckpointLog      int    `json:"checkpoint_log"`
+ 	CheckpointedFrames int    `json:"checkpointed_frames"`
+@@ -231,9 +232,18 @@ func (s *Store) ReadSQLiteLockSnapshot(ctx context.Context) (SQLiteLockSnapshot,
+ 	if err := s.db.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&snapshot.BusyTimeoutMS); err != nil {
+ 		return snapshot, err
+ 	}
++	if s.readOnly {
++		// A passive checkpoint can still write database pages. Avoid it on the
++		// strict read-only diagnostic connection and mark frame counts unknown.
++		snapshot.CheckpointProbe = "skipped_read_only"
++		snapshot.CheckpointLog = -1
++		snapshot.CheckpointedFrames = -1
++		return snapshot, nil
++	}
+ 	if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(PASSIVE)`).Scan(&snapshot.CheckpointBusy, &snapshot.CheckpointLog, &snapshot.CheckpointedFrames); err != nil {
+ 		return snapshot, err
+ 	}
++	snapshot.CheckpointProbe = "passive"
+ 	return snapshot, nil
+ }
+ 
 diff --git a/internal/store/relations.go b/internal/store/relations.go
 index 1797d26..943f6d3 100644
 --- a/internal/store/relations.go
@@ -907,10 +1640,18 @@ index 42c4982..f97ea24 100644
  
  // TestScanProject_Semantic_NotConflictSkipped verifies that verdicts of
 diff --git a/internal/store/store.go b/internal/store/store.go
-index 9c6537b..41ce8d8 100644
+index 9c6537b..d8c0072 100644
 --- a/internal/store/store.go
 +++ b/internal/store/store.go
-@@ -178,6 +178,7 @@ type SearchOptions struct {
+@@ -14,6 +14,7 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"log"
++	"net/url"
+ 	"os"
+ 	"path/filepath"
+ 	"regexp"
+@@ -178,6 +179,7 @@ type SearchOptions struct {
  	Type      string `json:"type,omitempty"`
  	Project   string `json:"project,omitempty"`
  	Scope     string `json:"scope,omitempty"`
@@ -918,7 +1659,7 @@ index 9c6537b..41ce8d8 100644
  	Limit     int    `json:"limit,omitempty"`
  	MatchMode string `json:"match_mode,omitempty"` // "all" (default) | "any"
  }
-@@ -199,6 +200,7 @@ type UpdateObservationParams struct {
+@@ -199,6 +201,7 @@ type UpdateObservationParams struct {
  	Content  *string `json:"content,omitempty"`
  	Project  *string `json:"project,omitempty"`
  	Scope    *string `json:"scope,omitempty"`
@@ -926,7 +1667,127 @@ index 9c6537b..41ce8d8 100644
  	TopicKey *string `json:"topic_key,omitempty"`
  }
  
-@@ -2874,6 +2876,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
+@@ -334,16 +337,17 @@ type CloudUpgradeRepairReport struct {
+ }
+ 
+ type CloudUpgradeLegacyMutationFinding struct {
+-	Seq        int64  `json:"seq"`
+-	Entity     string `json:"entity"`
+-	Op         string `json:"op"`
+-	ReasonCode string `json:"reason_code"`
+-	Message    string `json:"message"`
+-	Repairable bool   `json:"repairable"`
+-	RepairHint string `json:"repair_hint,omitempty"`
+-	EntityKey  string `json:"entity_key,omitempty"`
+-	TargetKey  string `json:"target_key,omitempty"`
+-	Project    string `json:"project,omitempty"`
++	Seq           int64  `json:"seq"`
++	Entity        string `json:"entity"`
++	Op            string `json:"op"`
++	ReasonCode    string `json:"reason_code"`
++	Message       string `json:"message"`
++	Repairable    bool   `json:"repairable"`
++	RepairHint    string `json:"repair_hint,omitempty"`
++	EntityKey     string `json:"entity_key,omitempty"`
++	TargetKey     string `json:"target_key,omitempty"`
++	Project       string `json:"project,omitempty"`
++	PayloadSHA256 string `json:"payload_sha256"`
+ }
+ 
+ type CloudUpgradeLegacyMutationReport struct {
+@@ -486,9 +490,10 @@ func (s *Store) MaxObservationLength() int {
+ // ─── Store ───────────────────────────────────────────────────────────────────
+ 
+ type Store struct {
+-	db    *sql.DB
+-	cfg   Config
+-	hooks storeHooks
++	db       *sql.DB
++	cfg      Config
++	hooks    storeHooks
++	readOnly bool
+ }
+ 
+ type execer interface {
+@@ -648,6 +653,38 @@ func New(cfg Config) (*Store, error) {
+ 	return s, nil
+ }
+ 
++// NewReadOnly opens an existing Engram database without creating directories,
++// running migrations, repairing journals, or otherwise changing persistent
++// state. It is intended for diagnostic and dry-run command paths only.
++func NewReadOnly(cfg Config) (*Store, error) {
++	if !filepath.IsAbs(cfg.DataDir) {
++		return nil, fmt.Errorf("engram: data directory must be an absolute path, got %q — set ENGRAM_DATA_DIR or ensure your home directory is resolvable", cfg.DataDir)
++	}
++
++	dbPath := filepath.Join(cfg.DataDir, "engram.db")
++	if _, err := os.Stat(dbPath); err != nil {
++		return nil, fmt.Errorf("engram: open read-only database: %w", err)
++	}
++	dsn := &url.URL{Scheme: "file", Path: filepath.ToSlash(dbPath)}
++	query := dsn.Query()
++	query.Set("mode", "ro")
++	query.Add("_pragma", "query_only(1)")
++	query.Add("_pragma", "foreign_keys(1)")
++	query.Add("_pragma", "busy_timeout(5000)")
++	dsn.RawQuery = query.Encode()
++
++	db, err := openDB("sqlite", dsn.String())
++	if err != nil {
++		return nil, fmt.Errorf("engram: open read-only database: %w", err)
++	}
++	db.SetMaxOpenConns(1)
++	if err := db.Ping(); err != nil {
++		_ = db.Close()
++		return nil, fmt.Errorf("engram: open read-only database: %w", err)
++	}
++	return &Store{db: db, cfg: cfg, hooks: defaultStoreHooks(), readOnly: true}, nil
++}
++
+ // newWithoutRepair is the same as New but skips repairEnrolledProjectSyncMutations.
+ // It exists solely to support tests that need to seed data and call repair manually.
+ func newWithoutRepair(cfg Config) (*Store, error) {
+@@ -1372,9 +1409,6 @@ type cloudUpgradeLegacyMutationEvaluation struct {
+ func (s *Store) DiagnoseCloudUpgradeLegacyMutations(project string) (CloudUpgradeLegacyMutationReport, error) {
+ 	project, _ = NormalizeProject(project)
+ 	project = strings.TrimSpace(project)
+-	if project == "" {
+-		return CloudUpgradeLegacyMutationReport{Project: project}, nil
+-	}
+ 
+ 	evaluations, err := s.evaluateCloudUpgradeLegacyMutations(project)
+ 	if err != nil {
+@@ -1482,12 +1516,13 @@ func (s *Store) evaluateCloudUpgradeLegacyMutationTx(tx *sql.Tx, mutation SyncMu
+ 	op := strings.TrimSpace(mutation.Op)
+ 	payload := strings.TrimSpace(mutation.Payload)
+ 	base := CloudUpgradeLegacyMutationFinding{
+-		Seq:       mutation.Seq,
+-		Entity:    entity,
+-		Op:        op,
+-		EntityKey: strings.TrimSpace(mutation.EntityKey),
+-		TargetKey: strings.TrimSpace(mutation.TargetKey),
+-		Project:   strings.TrimSpace(mutation.Project),
++		Seq:           mutation.Seq,
++		Entity:        entity,
++		Op:            op,
++		EntityKey:     strings.TrimSpace(mutation.EntityKey),
++		TargetKey:     strings.TrimSpace(mutation.TargetKey),
++		Project:       strings.TrimSpace(mutation.Project),
++		PayloadSHA256: payloadSHA256(mutation.Payload),
+ 	}
+ 
+ 	repairable := func(msg, hint string, repairedPayload string) cloudUpgradeLegacyMutationEvaluation {
+@@ -1853,7 +1888,7 @@ func (s *Store) cloudUpgradeManualActionReport(project string) (bool, CloudUpgra
+ 	if project != "" {
+ 		targetKey = fmt.Sprintf("%s:%s", DefaultSyncTargetKey, project)
+ 	}
+-	state, err := s.GetSyncState(targetKey)
++	state, err := s.FindSyncState(targetKey)
+ 	if err != nil {
+ 		return false, CloudUpgradeRepairReport{}, fmt.Errorf("read sync state for cloud upgrade repair: %w", err)
+ 	}
+@@ -2874,6 +2909,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
  		content := obs.Content
  		project := derefString(obs.Project)
  		scope := obs.Scope
@@ -934,7 +1795,7 @@ index 9c6537b..41ce8d8 100644
  		topicKey := derefString(obs.TopicKey)
  
  		if p.Type != nil {
-@@ -2894,6 +2897,9 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
+@@ -2894,6 +2930,9 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
  		if p.Scope != nil {
  			scope = normalizeScope(*p.Scope)
  		}
@@ -944,7 +1805,7 @@ index 9c6537b..41ce8d8 100644
  		if p.TopicKey != nil {
  			topicKey = normalizeTopicKey(*p.TopicKey)
  		}
-@@ -2905,6 +2911,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
+@@ -2905,6 +2944,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
  			     content = ?,
  			     project = ?,
  			     scope = ?,
@@ -952,7 +1813,7 @@ index 9c6537b..41ce8d8 100644
  			     topic_key = ?,
  			     normalized_hash = ?,
  			     revision_count = revision_count + 1,
-@@ -2915,6 +2922,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
+@@ -2915,6 +2955,7 @@ func (s *Store) UpdateObservation(id int64, p UpdateObservationParams) (*Observa
  			content,
  			nullableString(project),
  			scope,
@@ -960,7 +1821,7 @@ index 9c6537b..41ce8d8 100644
  			nullableString(topicKey),
  			hashNormalized(content),
  			id,
-@@ -3110,6 +3118,7 @@ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error)
+@@ -3110,6 +3151,7 @@ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error)
  
  	// Normalize project filter so "Engram" finds records stored as "engram"
  	opts.Project, _ = NormalizeProject(opts.Project)
@@ -968,7 +1829,7 @@ index 9c6537b..41ce8d8 100644
  
  	limit := opts.Limit
  	if limit <= 0 {
-@@ -3140,6 +3149,10 @@ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error)
+@@ -3140,6 +3182,10 @@ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error)
  			tkSQL += " AND scope = ?"
  			tkArgs = append(tkArgs, normalizeScope(opts.Scope))
  		}
@@ -979,7 +1840,7 @@ index 9c6537b..41ce8d8 100644
  
  		tkSQL += " ORDER BY updated_at DESC LIMIT ?"
  		tkArgs = append(tkArgs, limit)
-@@ -3195,6 +3208,11 @@ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error)
+@@ -3195,6 +3241,11 @@ func (s *Store) Search(query string, opts SearchOptions) ([]SearchResult, error)
  		args = append(args, normalizeScope(opts.Scope))
  	}
  
@@ -991,7 +1852,7 @@ index 9c6537b..41ce8d8 100644
  	sqlQ += " ORDER BY rank LIMIT ?"
  	args = append(args, limit)
  
-@@ -3347,8 +3365,8 @@ func (s *Store) FormatContext(project, scope string) (string, error) {
+@@ -3347,8 +3398,8 @@ func (s *Store) FormatContext(project, scope string) (string, error) {
  	if len(pinned) > 0 {
  		b.WriteString("### Pinned\n")
  		for _, obs := range pinned {
@@ -1002,7 +1863,7 @@ index 9c6537b..41ce8d8 100644
  		}
  		b.WriteString("\n")
  	}
-@@ -3356,8 +3374,8 @@ func (s *Store) FormatContext(project, scope string) (string, error) {
+@@ -3356,8 +3407,8 @@ func (s *Store) FormatContext(project, scope string) (string, error) {
  	if len(observations) > 0 {
  		b.WriteString("### Recent Observations\n")
  		for _, obs := range observations {
@@ -1013,7 +1874,7 @@ index 9c6537b..41ce8d8 100644
  		}
  		b.WriteString("\n")
  	}
-@@ -3365,6 +3383,21 @@ func (s *Store) FormatContext(project, scope string) (string, error) {
+@@ -3365,6 +3416,21 @@ func (s *Store) FormatContext(project, scope string) (string, error) {
  	return b.String(), nil
  }
  
@@ -1035,8 +1896,31 @@ index 9c6537b..41ce8d8 100644
  // ─── Export / Import ─────────────────────────────────────────────────────────
  
  func (s *Store) Export() (*ExportData, error) {
+@@ -3676,6 +3742,22 @@ func (s *Store) GetSyncState(targetKey string) (*SyncState, error) {
+ 	return s.getSyncState(targetKey)
+ }
+ 
++// FindSyncState reads sync state without creating a default row when the target
++// has never been initialized. Diagnostic and dry-run paths must use this method.
++func (s *Store) FindSyncState(targetKey string) (*SyncState, error) {
++	targetKey = normalizeSyncTargetKey(targetKey)
++	state, err := s.getSyncState(targetKey)
++	if errors.Is(err, sql.ErrNoRows) {
++		return nil, nil
++	}
++	return state, err
++}
++
++func payloadSHA256(payload string) string {
++	hash := sha256.Sum256([]byte(payload))
++	return hex.EncodeToString(hash[:])
++}
++
+ func (s *Store) ListPendingSyncMutations(targetKey string, limit int) ([]SyncMutation, error) {
+ 	targetKey = normalizeSyncTargetKey(targetKey)
+ 	if limit <= 0 {
 diff --git a/internal/store/store_test.go b/internal/store/store_test.go
-index 5ed55ca..460399d 100644
+index 5ed55ca..27455bf 100644
 --- a/internal/store/store_test.go
 +++ b/internal/store/store_test.go
 @@ -263,6 +263,106 @@ func TestUpdateAndSoftDeleteExcludedFromSearchAndTimeline(t *testing.T) {
@@ -1146,3 +2030,73 @@ index 5ed55ca..460399d 100644
  func TestPinnedObservationsAndFormatContextPriority(t *testing.T) {
  	cfg := mustDefaultConfig(t)
  	cfg.DataDir = t.TempDir()
+@@ -7394,6 +7494,69 @@ func TestReadSQLiteLockSnapshotDoesNotMutateApplicationRows(t *testing.T) {
+ 	}
+ }
+ 
++func TestNewReadOnlyRejectsWritesAndDoesNotInitializeState(t *testing.T) {
++	cfg := mustDefaultConfig(t)
++	cfg.DataDir = t.TempDir()
++	writable, err := New(cfg)
++	if err != nil {
++		t.Fatalf("New: %v", err)
++	}
++	if err := writable.Close(); err != nil {
++		t.Fatalf("close writable store: %v", err)
++	}
++
++	readOnly, err := NewReadOnly(cfg)
++	if err != nil {
++		t.Fatalf("NewReadOnly: %v", err)
++	}
++	state, err := readOnly.FindSyncState("cloud:never-initialized")
++	if err != nil || state != nil {
++		_ = readOnly.Close()
++		t.Fatalf("FindSyncState state=%+v err=%v", state, err)
++	}
++	if _, err := readOnly.DB().Exec(`INSERT INTO sessions (id, project, directory) VALUES ('forbidden', 'engram', '/tmp')`); err == nil {
++		_ = readOnly.Close()
++		t.Fatal("expected read-only store to reject writes")
++	}
++	if _, err := readOnly.GetSyncState("cloud:never-initialized"); err == nil {
++		_ = readOnly.Close()
++		t.Fatal("expected write-through GetSyncState to fail on read-only store")
++	}
++	snapshot, err := readOnly.ReadSQLiteLockSnapshot(context.Background())
++	if err != nil {
++		_ = readOnly.Close()
++		t.Fatalf("read-only lock snapshot: %v", err)
++	}
++	if snapshot.CheckpointProbe != "skipped_read_only" || snapshot.CheckpointLog != -1 || snapshot.CheckpointedFrames != -1 {
++		_ = readOnly.Close()
++		t.Fatalf("read-only lock snapshot must not checkpoint WAL: %+v", snapshot)
++	}
++	if err := readOnly.Close(); err != nil {
++		t.Fatalf("close read-only store: %v", err)
++	}
++
++	check, err := NewReadOnly(cfg)
++	if err != nil {
++		t.Fatalf("reopen read-only: %v", err)
++	}
++	defer check.Close()
++	state, err = check.FindSyncState("cloud:never-initialized")
++	if err != nil || state != nil {
++		t.Fatalf("read-only attempts changed sync state: state=%+v err=%v", state, err)
++	}
++}
++
++func TestNewReadOnlyDoesNotCreateMissingDatabase(t *testing.T) {
++	cfg := mustDefaultConfig(t)
++	cfg.DataDir = t.TempDir()
++	if _, err := NewReadOnly(cfg); err == nil {
++		t.Fatal("expected missing database error")
++	}
++	if _, err := os.Stat(filepath.Join(cfg.DataDir, "engram.db")); !errors.Is(err, os.ErrNotExist) {
++		t.Fatalf("NewReadOnly created database or returned unexpected stat error: %v", err)
++	}
++}
++
+ // newTestStoreRaw creates a store that runs migrations but skips the startup repair,
+ // allowing tests to seed data and call repairEnrolledProjectSyncMutations themselves.
+ func newTestStoreRaw(t *testing.T) *Store {

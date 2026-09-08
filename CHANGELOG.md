@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+- abre `engram doctor`, sus modos `--plan`/`--dry-run`, `cloud upgrade doctor` y `cloud upgrade repair --dry-run` sobre SQLite en `mode=ro`, sin migraciones, startup repair ni persistencia de estado de upgrade,
+- reemplaza las lecturas diagnósticas de `sync_state` que creaban filas por una consulta sin side effects,
+- hace que `sync_mutation_required_fields` reutilice el mismo evaluador determinístico que Cloud repair para evitar drift entre diagnóstico y reparación,
+- mantiene bloqueantes los defectos de proyectos enrolled, pero degrada backlog legacy de proyectos unenrolled a warning report-only sin sugerir enrollment como limpieza,
+- agrega salida `--json` para `cloud upgrade doctor` con secuencias y SHA-256 de payload, sin exponer payloads crudos,
+- agrega regresiones repetibles que comparan todas las tablas antes/después de doctor y dry-run.
+
 ## 0.4.0
 
 - corrige `conflicts scan --semantic` para que el dry-run no persista relaciones ni mutaciones de sync,

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "super-turing-opencode-knowledge",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "managedFiles": [
     "PLAYBOOK-KNOWLEDGE.md",
     "PLAYBOOK-KNOWLEDGE-ENGRAM.md",
@@ -68,6 +68,7 @@
     "knowledge_restore.sh exige confirmación, rechaza archivos inseguros o incompatibles y conserva rollback local antes de reemplazar estado",
     "la instalación escribe un marker machine-local .opencode-knowledge-addon.json para troubleshooting y auditoría ligera",
     "Engram Cloud es una réplica opcional: cada cliente conserva SQLite local y sincroniza por proyecto mediante wrappers manuales o un timer systemd user",
-    "el deployment server/ construye Engram desde el mismo ref y patch gestionados, usa PostgreSQL 16 aislado y no publica Postgres"
+    "el deployment server/ construye Engram desde el mismo ref y patch gestionados, usa PostgreSQL 16 aislado y no publica Postgres",
+    "los diagnósticos CLI abren SQLite en modo read-only; el evaluador de metadata legacy se comparte con repair, y backlog unenrolled se informa sin bloquear operaciones actuales"
   ]
 }

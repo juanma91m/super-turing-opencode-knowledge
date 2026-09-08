@@ -69,6 +69,11 @@ su memoria y sesiones distintas permanecen separadas. IDs explícitos que no sea
 canónicos usan un segmento derivado por hash para evitar colisiones por
 normalización o truncado.
 
+Los diagnósticos locales no preparan el sistema por detrás: `engram doctor` y los
+dry-runs de upgrade usan el SQLite existente en modo read-only. Los defectos
+legacy solo bloquean cuando el proyecto está enrolled; para proyectos unenrolled
+se informan como backlog histórico sin recomendar enrollment para limpiarlos.
+
 ## Qué NO mueve todavía
 
 La capa de compatibilidad cognitiva sigue temporalmente en `super-turing-opencode`, por ejemplo el wiring MCP de Engram en el installer base cuando el addon todavía no fue reaplicado tras un reinstall de la base.

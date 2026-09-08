@@ -47,6 +47,9 @@ bash ~/.config/opencode/scripts/knowledge_status_engram.sh
 - el addon expone las tools core de memoria más `mem_judge`,
   `mem_current_project`, `mem_doctor` y `mem_review`,
 - `mem_delete` queda fuera de la superficie operativa por defecto,
+- `mem_doctor` reutiliza el evaluador determinístico de Cloud repair: metadata
+  legacy de proyectos enrolled bloquea; backlog de proyectos unenrolled queda
+  como warning report-only con evidencia de secuencia/hash y sin payload crudo,
 - el plugin `engram-session-context.ts` inyecta el `sessionID` real de OpenCode
   solo en `engram_mem_session_summary` y preserva cualquier ID explícito,
 - si ese ID todavía no existe en SQLite, `mem_session_summary` resuelve el
