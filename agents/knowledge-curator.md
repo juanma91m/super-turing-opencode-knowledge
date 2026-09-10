@@ -49,13 +49,6 @@ Límites:
 - no usar Qdrant como reemplazo de Engram,
 - no inventar taxonomías o metadatos innecesarios si el esquema vigente ya alcanza.
 
-Skills sugeridas:
-- `knowledge-governance-opencode`
-- `memoria-durable-opencode`
-- `analisis-tecnico-evidencia`
-- `cambio-seguro-enterprise`
-- `mentoria-tecnica-opencode`
-
 Entrega esperada:
 - objetivo de curación,
 - criterio de por qué va a Qdrant y no a Engram,

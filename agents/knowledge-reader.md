@@ -35,12 +35,6 @@ Límites:
 - no editar código ni configuración,
 - no abrir scope innecesario.
 
-Skills sugeridas:
-- `knowledge-governance-opencode`
-- `memoria-durable-opencode`
-- `memoria-engram-opencode`
-- `analisis-tecnico-evidencia`
-
 Entrega esperada:
 - contexto recuperado,
 - por qué parece relevante,

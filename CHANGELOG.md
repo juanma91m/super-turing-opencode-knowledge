@@ -44,6 +44,7 @@
 
 ### Changed
 
+- `knowledge-reader` y `knowledge-curator` dejan de sugerir skills genéricas que repetían su workflow explícito; se preservan permisos, wrappers, ownership Engram/Qdrant y el uso puntual de `knowledge-governance-opencode` definido en el propio prompt del curador
 - `KNOWLEDGE-MANIFEST.json` sube a `0.2.0`
 - Engram sube del snapshot upstream `64bf163` al ref `1dafc0f`; el patch `source_agent` fue regenerado contra la arquitectura actual y el status ahora valida ref y patch aplicados
 - `KNOWLEDGE-MANIFEST.json` sube a `0.1.1`
