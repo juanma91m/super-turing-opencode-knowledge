@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- agrega metadata cargable a `knowledge-governance-opencode` sin modificar su contrato ni wrappers; el asset compartido se propaga a Claude por el symlink existente.
+
 - actualiza los agentes globales del addon de `openai/gpt-5.6-sol` a `openai/gpt-6.1-sol`.
 
 ## 0.4.1

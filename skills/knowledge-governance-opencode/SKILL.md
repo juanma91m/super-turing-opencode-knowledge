@@ -1,3 +1,7 @@
+---
+name: knowledge-governance-opencode
+description: "Define destino, scope, colección y metadata al curar conocimiento o escribir corpus con Engram/Qdrant mediante wrappers aprobados."
+---
 # Skill: knowledge-governance-opencode
 
 ## Qué hago
