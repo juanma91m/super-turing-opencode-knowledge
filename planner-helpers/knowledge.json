@@ -1,0 +1,11 @@
+{
+  "knowledge-search": {
+    "path": "scripts/knowledge_search.sh", "interpreter": "bash", "positionals": [],
+    "options": {"--query": "text", "--scope": "text", "--project": "text", "--source-id": "text", "--collection": "text", "--limit": "int", "--score-threshold": "float", "--json": "flag"},
+    "required": ["--query"]
+  },
+  "knowledge-status": {
+    "path": "scripts/knowledge_status.sh", "interpreter": "bash", "positionals": [],
+    "options": {"--engram-only": "flag", "--qdrant-only": "flag", "--all": "flag", "--help": "flag"}
+  }
+}

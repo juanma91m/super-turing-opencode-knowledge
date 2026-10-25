@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `planner-helpers/knowledge.json` declara solo búsqueda/status del corpus para el ejecutor de análisis; no admite store, rebuild, cambio de DB ni endpoints arbitrarios desde el planner.
+
 - agrega metadata cargable a `knowledge-governance-opencode` sin modificar su contrato ni wrappers; el asset compartido se propaga a Claude por el symlink existente.
 
 - actualiza los agentes globales del addon de `openai/gpt-5.6-sol` a `openai/gpt-6.1-sol`.

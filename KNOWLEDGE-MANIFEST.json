@@ -3,6 +3,7 @@
   "name": "super-turing-opencode-knowledge",
   "version": "0.4.1",
   "managedFiles": [
+    "planner-helpers/knowledge.json",
     "PLAYBOOK-KNOWLEDGE.md",
     "PLAYBOOK-KNOWLEDGE-ENGRAM.md",
     "PLAYBOOK-KNOWLEDGE-QDRANT.md",
