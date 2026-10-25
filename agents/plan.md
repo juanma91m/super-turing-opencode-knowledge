@@ -1,7 +1,7 @@
 ---
 description: Planner base con autonomía conservadora para consultar memoria durable y retrieval cuando el addon knowledge está instalado.
 mode: primary
-model: openai/gpt-5.6-sol
+model: openai/gpt-6.1-sol
 variant: high
 permission:
   edit: deny

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- actualiza los agentes globales del addon de `openai/gpt-5.6-sol` a `openai/gpt-6.1-sol`.
+
 ## 0.4.1
 
 - abre `engram doctor`, sus modos `--plan`/`--dry-run`, `cloud upgrade doctor` y `cloud upgrade repair --dry-run` sobre SQLite en `mode=ro`, sin migraciones, startup repair ni persistencia de estado de upgrade,

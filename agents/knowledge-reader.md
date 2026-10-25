@@ -1,7 +1,7 @@
 ---
 description: Recupera contexto durable y corpus recuperable del addon knowledge sin escribir ni modificar estado.
 mode: subagent
-model: openai/gpt-5.6-sol
+model: openai/gpt-6.1-sol
 variant: low
 tools:
   "playwright_*": false

@@ -1,7 +1,7 @@
 ---
 description: Implementador base con autonomía conservadora para consultar contexto durable y registrar hallazgos reutilizables cuando el addon knowledge está instalado.
 mode: primary
-model: openai/gpt-5.6-sol
+model: openai/gpt-6.1-sol
 variant: medium
 permission:
   edit: allow
