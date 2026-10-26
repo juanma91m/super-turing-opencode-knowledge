@@ -5,52 +5,23 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+
+def knowledge_block(finding: str) -> str:
+    return f"""## Knowledge autonomy (addon)
+- Respetá lecturas locales obligatorias. Si el contexto alcanza, no releas; si falta, consulta puntual directa con tools autorizadas, `knowledge-reader` para síntesis/corpus sólo si el rol permite delegar. Sin acceso, pedí contexto; sin bypass.
+- Guardá sólo hallazgos confirmados y reutilizables ({finding}) al estabilizarse un hito, con `topic_key`; priorizá pedidos de recordar o restricciones críticas, según autoridad del rol.
+- Summary sólo para continuidad nueva o si el contrato local lo exige expresamente; no reemplaza una memoria obligatoria. No duplicar lecturas/escrituras sin novedades ni guardar hipótesis/microiteraciones. No indexes corpus automáticamente."""
+
+
 AGENT_RULES = {
-    "plan": {
-        "task_target": "knowledge-reader",
-        "block": """
-## Knowledge autonomy (addon)
-- si el problema probablemente tenga antecedentes relevantes, consultá primero `knowledge-reader`,
-- si `mem_*` está disponible y el análisis deja una decisión o descarte claramente durable, guardá un resumen curado breve,
-- mantené escritura conservadora: no indexar corpus ni guardar memoria por reflejo.
-""".strip(),
-    },
-    "build": {
-        "task_target": "knowledge-reader",
-        "block": """
-## Knowledge autonomy (addon)
-- si el cambio parece tener antecedentes o conocimiento reusable, consultá primero `knowledge-reader`,
-- si al cerrar el trabajo aparece una decisión, bugfix o aprendizaje durable, guardá un resumen breve con `mem_save` si el backend está disponible,
-- mantené escritura conservadora: no curar Qdrant automáticamente ni guardar memoria por cada microiteración.
-""".strip(),
-    },
-    "planner": {
-        "task_target": "knowledge-reader",
-        "block": """
-## Knowledge autonomy (addon)
-- si el problema probablemente tenga antecedentes relevantes, consultá primero `knowledge-reader` sin esperar a que el usuario lo pida,
-- si el análisis deja una decisión o descarte claramente durable y `mem_*` está disponible, guardá una memoria curada breve,
-- mantené escritura conservadora: no indexes corpus ni guardes memoria por hipótesis temporales.
-""".strip(),
-    },
-    "master-dev": {
-        "task_target": "knowledge-reader",
-        "block": """
-## Knowledge autonomy (addon)
-- si el cambio parece tener antecedentes o conocimiento reusable, consultá primero `knowledge-reader` sin esperar indicación del usuario,
-- si al cerrar el trabajo aparece una decisión, bugfix o aprendizaje durable y `mem_*` está disponible, guardá un resumen breve y curado,
-- mantené escritura conservadora: no cures Qdrant automáticamente ni guardes memoria por microiteraciones o dudas todavía abiertas.
-""".strip(),
-    },
-    "agent-design": {
-        "task_target": "knowledge-reader",
-        "block": """
-## Knowledge autonomy (addon)
-- si el cambio toca prompts, skills, permisos o arquitectura de agentes y puede haber contexto previo relevante, consultá primero `knowledge-reader`,
-- si la decisión deja una regla durable de diseño del sistema y `mem_*` está disponible, persistí una memoria curada breve,
-- mantené escritura conservadora: registrá decisiones estables, no exploraciones temporales.
-""".strip(),
-    },
+    name: {"task_target": "knowledge-reader", "block": knowledge_block(finding)}
+    for name, finding in {
+        "plan": "decisiones o descartes",
+        "build": "decisiones, bugfixes o aprendizajes",
+        "planner": "decisiones o descartes",
+        "master-dev": "decisiones, bugfixes o aprendizajes",
+        "agent-design": "reglas de diseño del sistema",
+    }.items()
 }
 
 MARKER_START = "<!-- KNOWLEDGE_AUTONOMY_START -->"

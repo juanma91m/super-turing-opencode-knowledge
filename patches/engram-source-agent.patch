@@ -863,7 +863,7 @@ index cdf4110..6b68d4d 100644
  			name:       "probe failure is error",
  			probeErr:   errors.New("probe unavailable"),
 diff --git a/internal/mcp/mcp.go b/internal/mcp/mcp.go
-index e1fb4d1..e368739 100644
+index e1fb4d1..32f01dc 100644
 --- a/internal/mcp/mcp.go
 +++ b/internal/mcp/mcp.go
 @@ -15,11 +15,15 @@ package mcp
@@ -940,20 +940,20 @@ index e1fb4d1..e368739 100644
 +
 +	// These are existing usage policies, not a second tool catalog or loader profile.
 +	for _, policy := range []struct{ tool, rule string }{
-+		{"mem_save", "save decisions, bugs, discoveries, conventions PROACTIVELY (do not wait to be asked)"},
++		{"mem_save", "proactively save new verified durable knowledge at a stable milestone, only when the role permits"},
 +		{"mem_search", "find past work, decisions, or context from previous sessions"},
-+		{"mem_context", "get recent session history (call at session start or after compaction)"},
-+		{"mem_session_summary", `save end-of-session summary (MANDATORY before saying "done")`},
++		{"mem_context", "retrieve recent history only when needed context is missing, not as routine bootstrap"},
++		{"mem_session_summary", "save new useful continuity at a milestone or handoff, not every response or repeated close"},
 +		{"mem_get_observation", "get full untruncated content of a search result by ID"},
 +		{"mem_save_prompt", "save user prompt for context"},
-+		{"mem_current_project", "detect current project from cwd (recommended first call)"},
++		{"mem_current_project", "detect the project when context is missing or ambiguous, not to repeat established context"},
 +	} {
 +		if tools[policy.tool] != nil {
 +			fmt.Fprintf(&text, "\n%s — %s", policy.tool, policy.rule)
 +		}
 +	}
 +	if tools["mem_save"] != nil {
-+		text.WriteString("\n\nPROACTIVE SAVE RULE: Call mem_save immediately after ANY decision, bug fix, discovery, or convention — not just when asked.\n")
++		text.WriteString("\n\nPERSISTENCE RULE: Respect role authority and mandatory local workflows; read-only roles never write. Persist verified durable findings at stable milestones. Explicit memory requests and critical constraints take timely priority. Do not duplicate observations, overviews and summaries or persist hypotheses/private data. Summaries need new continuity, not a closing ritual; automatic saves use capture_prompt=false. Never persist secrets or private-marked content.\n")
 +	}
 +	if tools["mem_judge"] != nil {
 +		text.WriteString("\n## CONFLICT SURFACING\n\n")
@@ -1000,7 +1000,43 @@ index e1fb4d1..e368739 100644
  				mcp.WithString("match_mode",
  					mcp.Description("Token matching: \"all\" (default — every token must match, FTS5 AND) or \"any\" (any token matches — broader recall for multi-token queries). Any other value returns an error."),
  				),
-@@ -364,6 +403,9 @@ Examples:
+@@ -304,15 +343,9 @@ func registerTools(srv *server.MCPServer, s *store.Store, cfg MCPConfig, allowli
+ 				mcp.WithDestructiveHintAnnotation(false),
+ 				mcp.WithIdempotentHintAnnotation(false),
+ 				mcp.WithOpenWorldHintAnnotation(false),
+-				mcp.WithDescription(`Save an important observation to persistent memory. Call this PROACTIVELY after completing significant work — don't wait to be asked.
++				mcp.WithDescription(`Proactively save new verified, durable and reusable knowledge at a stable milestone when your role permits. Honor mandatory local memory workflows. Explicit requests to remember and critical constraints take timely priority; do not wait until they are lost. Do not write for every response, rerun or temporary hypothesis, or duplicate an existing observation/overview/summary of the same state.
+ 
+-WHEN to save (call this after each of these):
+-- Architectural decisions or tradeoffs
+-- Bug fixes (what was wrong, why, how you fixed it)
+-- New patterns or conventions established
+-- Configuration changes or environment setup
+-- Important discoveries or gotchas
+-- File structure changes
++Update the existing topic_key when the subject evolves. Keep independent findings distinct, without a blanket one-memory quota. Do not persist secrets, private content, raw prompts or tool logs; use capture_prompt=false for automatic curated saves. Uncertain write outcomes require an authorized state check before retrying; do not invent project/session IDs or use a CLI bypass.
+ 
+ FORMAT for content — use this structured format:
+   **What**: [concise description of what was done]
+@@ -320,16 +353,7 @@ FORMAT for content — use this structured format:
+   **Where**: [files/paths affected, e.g. src/auth/middleware.ts, internal/store/store.go]
+   **Learned**: [any gotchas, edge cases, or decisions made — omit if none]
+ 
+-TITLE should be short and searchable, like: "JWT auth middleware", "FTS5 query sanitization", "Fixed N+1 in user list"
+-
+-Examples:
+-  title: "Switched from sessions to JWT"
+-  type: "decision"
+-  content: "**What**: Replaced express-session with jsonwebtoken for auth\n**Why**: Session storage doesn't scale across multiple instances\n**Where**: src/middleware/auth.ts, src/routes/login.ts\n**Learned**: Must set httpOnly and secure flags on the cookie, refresh tokens need separate rotation logic"
+-
+-  title: "Fixed FTS5 syntax error on special chars"
+-  type: "bugfix"
+-  content: "**What**: Wrapped each search term in quotes before passing to FTS5 MATCH\n**Why**: Users typing queries like 'fix auth bug' would crash because FTS5 interprets special chars as operators\n**Where**: internal/store/store.go — sanitizeFTS() function\n**Learned**: FTS5 MATCH syntax is NOT the same as LIKE — always sanitize user input"`),
++TITLE should be short and searchable.`),
+ 				mcp.WithString("title",
+ 					mcp.Required(),
+ 					mcp.Description("Short, searchable title (e.g. 'JWT auth middleware', 'Fixed N+1 query')"),
+@@ -364,6 +388,9 @@ Examples:
  				mcp.WithBoolean("capture_prompt",
  					mcp.Description("Automatically capture the current user prompt when available (default: true). Set false for SDD artifacts or automated saves."),
  				),
@@ -1010,7 +1046,7 @@ index e1fb4d1..e368739 100644
  			),
  			queuedWriteHandler(writeQueue, handleSave(s, cfg, activity)),
  		)
-@@ -399,6 +441,9 @@ Examples:
+@@ -399,6 +426,9 @@ Examples:
  				mcp.WithString("topic_key",
  					mcp.Description("New topic key (normalized internally)"),
  				),
@@ -1020,16 +1056,40 @@ index e1fb4d1..e368739 100644
  			),
  			queuedWriteHandler(writeQueue, handleUpdate(s)),
  		)
-@@ -632,7 +677,7 @@ Examples:
+@@ -540,7 +570,7 @@ Examples:
+ 	if shouldRegister("mem_context", allowlist) {
+ 		srv.AddTool(
+ 			mcp.NewTool("mem_context",
+-				mcp.WithDescription("Get recent memory context from previous sessions. Shows recent sessions and observations to understand what was done before."),
++				mcp.WithDescription("Get recent sessions and observations only when useful history is missing from the current context/handoff, including after compaction. Skip redundant bootstrap when context is sufficient; honor mandatory local reads."),
+ 				mcp.WithTitleAnnotation("Get Memory Context"),
+ 				mcp.WithReadOnlyHintAnnotation(true),
+ 				mcp.WithDestructiveHintAnnotation(false),
+@@ -632,9 +662,9 @@ Examples:
  				mcp.WithTitleAnnotation("Save Session Summary"),
  				mcp.WithReadOnlyHintAnnotation(false),
  				mcp.WithDestructiveHintAnnotation(false),
 -				mcp.WithIdempotentHintAnnotation(false),
 +				mcp.WithIdempotentHintAnnotation(true),
  				mcp.WithOpenWorldHintAnnotation(false),
- 				mcp.WithDescription(`Save a comprehensive end-of-session summary. Call this when a session is ending or when significant work is complete. This creates a structured summary that future sessions will use to understand what happened.
+-				mcp.WithDescription(`Save a comprehensive end-of-session summary. Call this when a session is ending or when significant work is complete. This creates a structured summary that future sessions will use to understand what happened.
++				mcp.WithDescription(`Save concise new continuity for a meaningful milestone, handoff or blocker that another session needs to resume, only when your role permits. Preserve mandatory local closures. Not required for every response, confirmation, rerun or repeated close without material change; skip it if an existing artifact/memory already provides sufficient continuity. It does not replace a reusable finding or a required local observation. Never persist secrets, private content or raw tool logs.
  
-@@ -672,7 +717,7 @@ GUIDELINES:
+ FORMAT — use this exact structure in the content field:
+ 
+@@ -661,18 +691,13 @@ FORMAT — use this exact structure in the content field:
+ - path/to/file.ts — [what it does or what changed]
+ - path/to/other.go — [role in the architecture]
+ 
+-GUIDELINES:
+-- Be CONCISE but don't lose important details (file paths, error messages, decisions)
+-- Focus on WHAT and WHY, not HOW (the code itself is in the repo)
+-- Include things that would save a future agent time
+-- The Discoveries section is the most valuable — capture gotchas and non-obvious learnings
+-- Relevant Files should only include files that were significantly changed or are important for context`),
++Keep only useful decisions, evidence, paths and next steps; omit unchanged detail.`),
+ 				mcp.WithString("content",
+ 					mcp.Required(),
  					mcp.Description("Full session summary using the Goal/Instructions/Discoveries/Accomplished/Next Steps/Relevant Files format"),
  				),
  				mcp.WithString("session_id",
@@ -1038,7 +1098,7 @@ index e1fb4d1..e368739 100644
  				),
  				mcp.WithString("project",
  					mcp.Description("Optional explicit project for this memory. Accepted only when backed by known context (existing project, matching session, repo config, or ambiguous-project recovery); invalid or unbacked names fail loudly."),
-@@ -683,6 +728,9 @@ GUIDELINES:
+@@ -683,6 +708,9 @@ GUIDELINES:
  				mcp.WithString("recovery_token",
  					mcp.Description("Short-lived token returned by an ambiguous_project error. Required with project_choice_reason=user_selected_after_ambiguous_project."),
  				),
@@ -1048,7 +1108,16 @@ index e1fb4d1..e368739 100644
  			),
  			queuedWriteHandler(writeQueue, handleSessionSummary(s, cfg, activity)),
  		)
-@@ -971,6 +1019,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -792,7 +820,7 @@ Duplicates are automatically detected and skipped — safe to call multiple time
+ 	if shouldRegister("mem_current_project", allowlist) {
+ 		srv.AddTool(
+ 			mcp.NewTool("mem_current_project",
+-				mcp.WithDescription("Detect the current project from the working directory. Returns project name, source (how it was detected), path, and available alternatives. NEVER errors — use this for discovery before writing. Recommended as the first call when starting a new session."),
++				mcp.WithDescription("Detect the current project from the working directory. Returns project name, source, path and available alternatives. NEVER errors. Use when project context is missing or ambiguous, not to repeat established context."),
+ 				mcp.WithTitleAnnotation("Detect Current Project"),
+ 				mcp.WithReadOnlyHintAnnotation(true),
+ 				mcp.WithDestructiveHintAnnotation(false),
+@@ -971,6 +999,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  		typ, _ := req.GetArguments()["type"].(string)
  		projectOverride, _ := req.GetArguments()["project"].(string)
  		scope, _ := req.GetArguments()["scope"].(string)
@@ -1056,7 +1125,7 @@ index e1fb4d1..e368739 100644
  		matchMode, _ := req.GetArguments()["match_mode"].(string)
  		allProjects := boolArg(req, "all_projects", false)
  		limit := intArg(req, "limit", 10)
-@@ -1022,6 +1071,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -1022,6 +1051,7 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  			Type:      typ,
  			Project:   searchProject,
  			Scope:     scope,
@@ -1064,7 +1133,7 @@ index e1fb4d1..e368739 100644
  			Limit:     limit,
  			MatchMode: matchMode,
  		})
-@@ -1058,6 +1108,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -1058,6 +1088,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  			if r.Project != nil {
  				projectDisplay = fmt.Sprintf(" | project: %s", *r.Project)
  			}
@@ -1075,7 +1144,7 @@ index e1fb4d1..e368739 100644
  			preview := truncate(r.Content, 300)
  			if len(r.Content) > 300 {
  				anyTruncated = true
-@@ -1067,10 +1121,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -1067,10 +1101,10 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  			if r.State() == store.ObservationStateNeedsReview {
  				stateDisplay = " | state: needs_review"
  			}
@@ -1088,7 +1157,7 @@ index e1fb4d1..e368739 100644
  			entry := map[string]any{
  				"id":      r.ID,
  				"sync_id": r.SyncID,
-@@ -1083,6 +1137,9 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
+@@ -1083,6 +1117,9 @@ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) serv
  			if r.Project != nil {
  				entry["project"] = *r.Project
  			}
@@ -1098,7 +1167,7 @@ index e1fb4d1..e368739 100644
  			if r.ReviewAfter != nil {
  				entry["review_after"] = *r.ReviewAfter
  			}
-@@ -1199,6 +1256,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+@@ -1199,6 +1236,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
  		sessionID, _ := req.GetArguments()["session_id"].(string)
  		scope, _ := req.GetArguments()["scope"].(string)
  		topicKey, _ := req.GetArguments()["topic_key"].(string)
@@ -1106,7 +1175,7 @@ index e1fb4d1..e368739 100644
  		projectChoice, _ := req.GetArguments()["project"].(string)
  		_, explicitProjectProvided := req.GetArguments()["project"]
  		projectChoiceReason, _ := req.GetArguments()["project_choice_reason"].(string)
-@@ -1266,6 +1324,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+@@ -1266,6 +1304,7 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
  			Type:      typ,
  			Title:     title,
  			Content:   content,
@@ -1114,7 +1183,7 @@ index e1fb4d1..e368739 100644
  			Project:   project,
  			Scope:     scope,
  			TopicKey:  topicKey,
-@@ -1303,6 +1362,9 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
+@@ -1303,6 +1342,9 @@ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server
  		if similarWarning != "" {
  			msg += "\n" + similarWarning
  		}
@@ -1124,7 +1193,7 @@ index e1fb4d1..e368739 100644
  
  		// Post-transaction conflict candidate detection (REQ-001).
  		// Errors are logged and swallowed — detection failure never fails the save.
-@@ -1410,8 +1472,12 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
+@@ -1410,8 +1452,12 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
  		if v, ok := req.GetArguments()["topic_key"].(string); ok {
  			update.TopicKey = &v
  		}
@@ -1138,7 +1207,7 @@ index e1fb4d1..e368739 100644
  			return mcp.NewToolResultError("provide at least one field to update"), nil
  		}
  
-@@ -1426,6 +1492,9 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
+@@ -1426,6 +1472,9 @@ func handleUpdate(s *store.Store) server.ToolHandlerFunc {
  		}
  
  		msg := fmt.Sprintf("Memory updated: #%d %q (%s, scope=%s)", obs.ID, obs.Title, obs.Type, obs.Scope)
@@ -1148,7 +1217,7 @@ index e1fb4d1..e368739 100644
  		if contentLen > s.MaxObservationLength() {
  			msg += fmt.Sprintf("\n⚠ WARNING: Content was truncated from %d to %d chars. Consider splitting into smaller observations.", contentLen, s.MaxObservationLength())
  		}
-@@ -1844,7 +1913,11 @@ func handleGetObservation(s *store.Store, cfg MCPConfig) server.ToolHandlerFunc
+@@ -1844,7 +1893,11 @@ func handleGetObservation(s *store.Store, cfg MCPConfig) server.ToolHandlerFunc
  		}
  		toolName := ""
  		if obs.ToolName != nil {
@@ -1161,7 +1230,7 @@ index e1fb4d1..e368739 100644
  		}
  		duplicateMeta := fmt.Sprintf("\nDuplicates: %d", obs.DuplicateCount)
  		revisionMeta := fmt.Sprintf("\nRevisions: %d", obs.RevisionCount)
-@@ -1876,6 +1949,7 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+@@ -1876,6 +1929,7 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
  		_, explicitProjectProvided := req.GetArguments()["project"]
  		projectChoiceReason, _ := req.GetArguments()["project_choice_reason"].(string)
  		recoveryToken, _ := req.GetArguments()["recovery_token"].(string)
@@ -1169,7 +1238,7 @@ index e1fb4d1..e368739 100644
  
  		// Reject empty/whitespace-only content before any project resolution (#393).
  		if strings.TrimSpace(content) == "" {
-@@ -1896,7 +1970,18 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+@@ -1896,7 +1950,18 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
  
  		// Resolve write project using the full MCP precedence: explicit request,
  		// existing session association, process override, repo config/directory detection, then cwd fallback.
@@ -1189,7 +1258,7 @@ index e1fb4d1..e368739 100644
  		if err != nil {
  			return writeProjectErrorResult(activity, recoverySessionID, detRes, err), nil
  		}
-@@ -1909,14 +1994,18 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+@@ -1909,14 +1974,18 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
  		}
  
  		// Ensure the implicit MCP session exists with the current working directory.
@@ -1209,7 +1278,7 @@ index e1fb4d1..e368739 100644
  		})
  		if err != nil {
  			return mcp.NewToolResultError("Failed to save session summary: " + err.Error()), nil
-@@ -1931,6 +2020,33 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
+@@ -1931,6 +2000,33 @@ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivi
  	}
  }
  
@@ -1243,7 +1312,7 @@ index e1fb4d1..e368739 100644
  func handleSessionStart(s *store.Store, cfg MCPConfig, activity *SessionActivity) server.ToolHandlerFunc {
  	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
  		id, _ := req.GetArguments()["id"].(string)
-@@ -2959,6 +3075,36 @@ func defaultSessionID(project string) string {
+@@ -2959,6 +3055,36 @@ func defaultSessionID(project string) string {
  	return "manual-save-" + project
  }
  
@@ -2262,10 +2331,10 @@ index 5ed55ca..27455bf 100644
  func newTestStoreRaw(t *testing.T) *Store {
 diff --git a/internal/mcp/instructions_test.go b/internal/mcp/instructions_test.go
 new file mode 100644
-index 0000000..b41e5f6
+index 0000000..592bfd0
 --- /dev/null
 +++ b/internal/mcp/instructions_test.go
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,209 @@
 +package mcp
 +
 +import (
@@ -2361,28 +2430,64 @@ index 0000000..b41e5f6
 +	}
 +}
 +
-+func TestServerInstructionsPreserveAvailableUsagePolicies(t *testing.T) {
++func TestServerInstructionsFollowMilestonePolicy(t *testing.T) {
 +	full := initializeInstructionsForTest(t, NewServer(newMCPTestStore(t)))
 +	for _, rule := range []string{
-+		"save decisions, bugs, discoveries, conventions PROACTIVELY (do not wait to be asked)",
-+		"get recent session history (call at session start or after compaction)",
-+		`save end-of-session summary (MANDATORY before saying "done")`,
++		"new verified durable knowledge at a stable milestone",
++		"only when needed context is missing",
++		"not every response or repeated close",
 +		"save user prompt for context",
-+		"detect current project from cwd (recommended first call)",
-+		"PROACTIVE SAVE RULE: Call mem_save immediately after ANY decision, bug fix, discovery, or convention — not just when asked.",
++		"when context is missing or ambiguous",
++		"Respect role authority and mandatory local workflows",
++		"read-only roles never write",
++		"Explicit memory requests and critical constraints take timely priority",
++		"Do not duplicate observations, overviews and summaries",
++		"capture_prompt=false",
++		"Never persist secrets",
 +	} {
 +		if !strings.Contains(full, rule) {
-+			t.Errorf("lost existing policy: %s", rule)
++			t.Errorf("missing candidate policy: %s", rule)
 +		}
 +	}
 +	readOnly := initializeInstructionsForTest(t, NewServerWithTools(newMCPTestStore(t), ResolveTools("mem_context,mem_search")))
-+	for _, unavailable := range []string{"mem_save", "mem_session_summary", "PROACTIVE SAVE RULE", "CONFLICT SURFACING"} {
++	for _, unavailable := range []string{"mem_save", "mem_session_summary", "PERSISTENCE RULE", "CONFLICT SURFACING"} {
 +		if strings.Contains(readOnly, unavailable) {
 +			t.Errorf("read-only instructions require an unavailable operation: %s", unavailable)
 +		}
 +	}
-+	if !strings.Contains(readOnly, "call at session start or after compaction") {
-+		t.Error("available context policy was lost")
++	if !strings.Contains(readOnly, "only when needed context is missing") {
++		t.Error("proportional context policy was lost")
++	}
++	for _, legacy := range []string{"MANDATORY before saying", "immediately after ANY decision", "recommended first call", "call at session start or after compaction"} {
++		if strings.Contains(full, legacy) {
++			t.Errorf("legacy unconditional trigger remains: %s", legacy)
++		}
++	}
++}
++
++func TestMemoryToolDescriptionsMatchCandidatePolicy(t *testing.T) {
++	tools := NewServer(newMCPTestStore(t)).ListTools()
++	for name, phrases := range map[string][]string{
++		"mem_save":            {"stable milestone", "Explicit requests to remember", "mandatory local memory", "capture_prompt=false", "authorized state check"},
++		"mem_context":         {"history is missing", "context is sufficient", "mandatory local reads"},
++		"mem_session_summary": {"new continuity", "role permits", "mandatory local closures", "Not required for every response", "existing artifact/memory", "required local observation"},
++		"mem_current_project": {"missing or ambiguous", "not to repeat established context"},
++	} {
++		for _, phrase := range phrases {
++			if !strings.Contains(tools[name].Tool.Description, phrase) {
++				t.Errorf("%s lacks %q", name, phrase)
++			}
++		}
++	}
++	for _, heading := range []string{"## Goal", "## Instructions", "## Discoveries", "## Accomplished", "## Next Steps", "## Relevant Files"} {
++		if !strings.Contains(tools["mem_session_summary"].Tool.Description, heading) {
++			t.Errorf("summary format lost %s", heading)
++		}
++	}
++	for _, field := range []string{"**What**", "**Why**", "**Where**", "**Learned**"} {
++		if !strings.Contains(tools["mem_save"].Tool.Description, field) {
++			t.Errorf("observation format lost %s", field)
++		}
 +	}
 +}
 +

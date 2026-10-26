@@ -159,12 +159,19 @@ class EngramMetadataTests(unittest.TestCase):
         self.assertEqual(set(self.snapshots["custom-with-unknown"]["tools"]), {"mem_search"})
 
     @unittest.skipUnless(os.environ.get("ENGRAM_BASELINE_BIN"), "Isolated baseline binary required")
-    def test_schemas_annotations_protocol_and_conflict_rules_match_baseline(self) -> None:
+    def test_structured_contracts_and_conflict_rules_match_baseline(self) -> None:
         for name, value in self.filters.items():
             with self.subTest(profile=name):
                 old = inspect_mcp(os.environ["ENGRAM_BASELINE_BIN"], value)
                 new = self.snapshots[name]
-                self.assertEqual(old["tools"], new["tools"])
+                self.assertEqual(set(old["tools"]), set(new["tools"]))
+                policy_descriptions = {"mem_save", "mem_context", "mem_session_summary", "mem_current_project"}
+                for tool, definition in old["tools"].items():
+                    other = dict(new["tools"][tool])
+                    if tool in policy_descriptions:
+                        self.assertNotEqual(definition["description"], other["description"])
+                        other["description"] = definition["description"]
+                    self.assertEqual(definition, other)
                 self.assertEqual(old["protocol"], new["protocol"])
                 self.assertEqual(old["capabilities"], new["capabilities"])
                 if "mem_judge" in new["tools"] and "mem_save" in new["tools"]:

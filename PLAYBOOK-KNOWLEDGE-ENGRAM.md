@@ -67,11 +67,18 @@ registradas después del filtro `--tools`, ordenadas de forma estable. El client
 conserva el control de nombres, carga, descubrimiento y permisos por rol; el servidor
 no promete disponibilidad universal ni prescribe una API de búsqueda del cliente.
 
-Las reglas de lectura, guardado y cierre se mantienen para las herramientas
-disponibles. Con adjudicación se conserva el protocolo completo de conflictos;
+Las reglas de uso son proporcionales: no releer contexto suficiente, guardar
+hallazgos durables al estabilizar hitos y resumir sólo continuidad nueva. Los
+pedidos explícitos y restricciones críticas no esperan a perderse; las lecturas
+y cierres locales obligatorios se conservan. Un rol read-only no escribe y un rol
+sin acceso pide contexto, sin CLI/SQL como bypass. La política completa está en
+`memoria-durable-opencode`, no en un bootstrap fijo por varios buckets.
+
+Con adjudicación se conserva el protocolo completo de conflictos;
 sin ella, se informa la limitación y se dejan los juicios pendientes para un contexto
 autorizado, sin CLI bypass ni falsas confirmaciones. Esto no cambia los filtros,
-handlers, schemas, anotaciones ni política de memoria. El template Claude puede
+handlers, campos estructurados o anotaciones. Las descripciones de uso sí cambian
+con la política; no son cambios de permisos. El template Claude puede
 tener otro filtro: no asumir que coincide con OpenCode o con el cliente instalado.
 
 Para validar metadatos, los tests de integración aceptan `ENGRAM_CANDIDATE_BIN` y,
@@ -84,6 +91,10 @@ SQLite vacío para evitar migración de bases huérfanas al iniciar. Solo usan
 El patch necesita un rebuild autorizado para activarse. El instalador completo
 también recompone el checkout gestionado: no ejecutarlo para probar un candidato
 ni reemplazar el binario activo sin autorización y backup.
+
+Para actualizar bloques de autonomía ya instalados, usar el render existente desde
+las bases canónicas y contrastar el cuerpo efectivo: `apply` no sustituye un bloque
+ya marcado. No tocar permisos ni otros bloques de addons para forzar esa actualización.
 
 OpenCode trata **cada export** de un archivo auto-descubierto bajo `plugins/*.ts`
 como una plugin factory. Esos módulos deben exportar únicamente factories que

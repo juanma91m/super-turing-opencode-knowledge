@@ -58,3 +58,8 @@ bash ~/.config/opencode/scripts/knowledge_status_engram.sh
 - `engram_mcp_enabled=no` cuando esperabas usar `mem_*`
 - DB ausente o binario presente pero no cableado en config
 - uso de Engram como si fuera corpus grande de retrieval
+
+## Fallos y reintentos
+- `unknown_project`, `unknown_session` o denegación de permisos son errores determinísticos: no repetir iguales argumentos, inventar IDs/proyectos ni registrar sesiones por un bypass. Corregir sólo con evidencia legítima y la autoridad del rol; si falta, informar el bloqueo.
+- Un fallo de transporte puede ser transitorio, pero un timeout de escritura no prueba que nada se guardó. Consultar el estado por una lectura autorizada antes de repetir; si no puede confirmarse, dejar la incertidumbre explícita.
+- Una limitación del cliente no se corrige exponiendo tools nuevas ni ejecutando el CLI por fuera del contrato. No reinstalar, reconstruir, reparar DB o cambiar configuración por reflejo.

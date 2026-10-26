@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Punto 5: recuperación proporcional, reader sólo si aporta y está permitido, guardado durable por hito y summary por continuidad nueva. Pedidos explícitos, restricciones críticas, cierres locales y autoridad read-only se preservan; sin cambios de filtros, handlers o anotaciones.
+- Se alinean los textos MCP, descripciones de uso, skill durable y autonomía; se eliminan ejemplos/categorías repetidos en la tool y bootstrap fijo por buckets. Se agregan checks de contrato y composición sin corridas de modelos; no se afirma mejora conductual o de latencia.
+- Los errores determinísticos y respuestas ambiguas de escritura se tratan sin reintentos ciegos ni bypass. El render existente actualiza los bloques desde bases limpias; no se reemplaza el generador ni se cambian permisos por arrastre.
+
 - Punto 4: instrucciones MCP derivadas de las tools realmente registradas, sin publicidad de herramientas ausentes ni promesas de loader; políticas disponibles y protocolo de conflictos preservados, con limitación explícita si falta adjudicación.
 - El fix compartido respeta filtros distintos de OpenCode y Claude, sin cambiar allowlists, schemas, anotaciones o handlers. Tests focalizados del patch y probes nativos de metadatos con builds/SQLite aislados; no activa el candidato automáticamente.
 - Se declara whitespace específico solo para el artefacto unified-patch (sus marcadores de contexto preceden tabs/líneas vacías); el código expandido se valida con `git apply --whitespace=error-all` y `gofmt`, sin relajar las reglas de las fuentes normales.

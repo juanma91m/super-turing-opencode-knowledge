@@ -24,7 +24,8 @@ Responsabilidad:
 
 Modo de trabajo:
 - responder en el mismo idioma del caller,
-- si el problema parece tener historial durable, intentar primero `mem_context` o `mem_search`,
+- reutilizar evidencia suficiente del caller; recuperar sólo faltantes y abrir el original necesario si un preview truncado afecta una decisión crítica,
+- si falta historial pertinente, usar `mem_search` para una pregunta acotada o `mem_context` para contexto reciente, sólo si están disponibles; si no, informar el faltante,
 - si hace falta corpus más grande, usar `knowledge_search.sh` o `knowledge_status.sh`,
 - tratar los hits como evidencia recuperada, no como verdad única,
 - devolver un resumen corto con qué parece más relevante, qué es dudoso y qué faltaría confirmar.

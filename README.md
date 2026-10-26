@@ -71,7 +71,13 @@ normalización o truncado.
 
 El patch genera las instrucciones MCP desde el registro efectivo de cada proceso,
 sin anunciar herramientas filtradas ni imponer un mecanismo de descubrimiento al
-cliente. Las políticas de uso disponibles se conservan. Si el perfil permite
+cliente. La política de uso en fuentes es proporcional: contexto suficiente no
+se recupera otra vez, consultas puntuales usan lectura autorizada y reader queda
+para síntesis/corpus. Persistencia por hallazgo durable estabilizado y summary
+por continuidad nueva, preservando pedidos explícitos, restricciones críticas y
+cierres locales obligatorios. El contrato completo está en
+`skills/memoria-durable-opencode/SKILL.md`; no se aplica una cuota ciega de escrituras.
+Si el perfil permite
 guardar pero no adjudicar conflictos, las instrucciones explicitan que el juicio
 queda pendiente, sin ampliar permisos ni ofrecer un bypass. Los filtros de Claude
 y OpenCode pueden diferir y no se normalizan por este cambio. La activación exige
