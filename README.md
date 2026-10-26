@@ -61,13 +61,22 @@ upstream exacto, aplica `patches/engram-source-agent.patch` y construye el binar
 local. El checkout en `~/.local/src/engram-opencode-stack` es estado gestionado de
 build, no el source of truth del cambio.
 
-El MCP expone una superficie operativa curada: lectura, escritura durable,
+El wiring OpenCode expone una superficie operativa curada: lectura, escritura durable,
 diagnóstico, review y adjudicación explícita. `mem_delete` no se expone a los
 agentes por defecto. Los summaries usan `session/<session-id>/summary` para IDs
 canónicos de OpenCode, por lo que repetir el cierre de una misma sesión actualiza
 su memoria y sesiones distintas permanecen separadas. IDs explícitos que no sean
 canónicos usan un segmento derivado por hash para evitar colisiones por
 normalización o truncado.
+
+El patch genera las instrucciones MCP desde el registro efectivo de cada proceso,
+sin anunciar herramientas filtradas ni imponer un mecanismo de descubrimiento al
+cliente. Las políticas de uso disponibles se conservan. Si el perfil permite
+guardar pero no adjudicar conflictos, las instrucciones explicitan que el juicio
+queda pendiente, sin ampliar permisos ni ofrecer un bypass. Los filtros de Claude
+y OpenCode pueden diferir y no se normalizan por este cambio. La activación exige
+rebuild y reemplazo autorizados del binario compartido; editar el patch no actualiza
+automáticamente una instalación en ejecución.
 
 Los diagnósticos locales no preparan el sistema por detrás: `engram doctor` y los
 dry-runs de upgrade usan el SQLite existente en modo read-only. Los defectos

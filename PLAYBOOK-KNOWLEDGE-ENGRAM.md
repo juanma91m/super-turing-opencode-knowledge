@@ -44,7 +44,7 @@ bash ~/.config/opencode/scripts/knowledge_status_engram.sh
 
 ## Superficie MCP y sesiones
 
-- el addon expone las tools core de memoria más `mem_judge`,
+- el wiring OpenCode del addon expone las tools de memoria más `mem_judge`,
   `mem_current_project`, `mem_doctor` y `mem_review`,
 - `mem_delete` queda fuera de la superficie operativa por defecto,
 - `mem_doctor` reutiliza el evaluador determinístico de Cloud repair: metadata
@@ -59,6 +59,31 @@ bash ~/.config/opencode/scripts/knowledge_status_engram.sh
   `topic_key=session/<session-id>/summary`: repetir una sesión actualiza la misma
   observación y otra sesión crea una distinta; IDs explícitos no canónicos usan
   un segmento hash estable para no colisionar al normalizar o truncar.
+
+### Instrucciones según el registro efectivo
+
+El patch del addon construye el catálogo de instrucciones con las herramientas
+registradas después del filtro `--tools`, ordenadas de forma estable. El cliente
+conserva el control de nombres, carga, descubrimiento y permisos por rol; el servidor
+no promete disponibilidad universal ni prescribe una API de búsqueda del cliente.
+
+Las reglas de lectura, guardado y cierre se mantienen para las herramientas
+disponibles. Con adjudicación se conserva el protocolo completo de conflictos;
+sin ella, se informa la limitación y se dejan los juicios pendientes para un contexto
+autorizado, sin CLI bypass ni falsas confirmaciones. Esto no cambia los filtros,
+handlers, schemas, anotaciones ni política de memoria. El template Claude puede
+tener otro filtro: no asumir que coincide con OpenCode o con el cliente instalado.
+
+Para validar metadatos, los tests de integración aceptan `ENGRAM_CANDIDATE_BIN` y,
+opcionalmente, `ENGRAM_BASELINE_BIN`, ambos paths de builds aislados. Sin candidato
+explícito, las pruebas nativas se omiten: nunca arrancan por defecto el binario
+instalado. Sus fixtures aíslan HOME/cwd/datos, desactivan autosync y precrean un
+SQLite vacío para evitar migración de bases huérfanas al iniciar. Solo usan
+`initialize` y `tools/list`, no escrituras de memoria ni llamadas a modelos.
+
+El patch necesita un rebuild autorizado para activarse. El instalador completo
+también recompone el checkout gestionado: no ejecutarlo para probar un candidato
+ni reemplazar el binario activo sin autorización y backup.
 
 OpenCode trata **cada export** de un archivo auto-descubierto bajo `plugins/*.ts`
 como una plugin factory. Esos módulos deben exportar únicamente factories que

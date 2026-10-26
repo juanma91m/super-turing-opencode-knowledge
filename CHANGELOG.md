@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Punto 4: instrucciones MCP derivadas de las tools realmente registradas, sin publicidad de herramientas ausentes ni promesas de loader; políticas disponibles y protocolo de conflictos preservados, con limitación explícita si falta adjudicación.
+- El fix compartido respeta filtros distintos de OpenCode y Claude, sin cambiar allowlists, schemas, anotaciones o handlers. Tests focalizados del patch y probes nativos de metadatos con builds/SQLite aislados; no activa el candidato automáticamente.
+- Se declara whitespace específico solo para el artefacto unified-patch (sus marcadores de contexto preceden tabs/líneas vacías); el código expandido se valida con `git apply --whitespace=error-all` y `gofmt`, sin relajar las reglas de las fuentes normales.
+
 - `planner-helpers/knowledge.json` declara solo búsqueda/status del corpus para el ejecutor de análisis; no admite store, rebuild, cambio de DB ni endpoints arbitrarios desde el planner.
 
 - agrega metadata cargable a `knowledge-governance-opencode` sin modificar su contrato ni wrappers; el asset compartido se propaga a Claude por el symlink existente.
