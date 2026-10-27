@@ -69,6 +69,20 @@ su memoria y sesiones distintas permanecen separadas. IDs explícitos que no sea
 canónicos usan un segmento derivado por hash para evitar colisiones por
 normalización o truncado.
 
+`knowledge-reader` deniega explícitamente en OpenCode las cinco herramientas
+Engram capaces de mutar que incluye ese filtro: `mem_save`, `mem_session_summary`,
+`mem_update`, `mem_judge` y `mem_review`. Las reglas usan los IDs reales
+`engram_mem_*`: retiran esos schemas del rol y permiten rechazar la ejecución
+antes del backend. `mem_review` es mixta (`list`/`mark_reviewed`); se bloquea
+completa, incluida su lectura opcional. Búsqueda, contexto, originales, utilidades
+de lectura y wrappers de consulta/estado conservan sus permisos anteriores; no se
+agregan allows ni se recortan las capacidades legítimas de otros roles/curators.
+Los overlays sin reader homónimo consumen esa definición global: no necesitan
+copias locales. El cambio exige comprobar la composición efectiva por proyecto.
+Los tests fijan el inventario actual para exigir reclasificación ante herramientas
+nuevas; los cinco denies no son una allowlist fail-closed para cualquier tool futura.
+La adaptación Claude mantiene su allowlist propia, sin normalizar filtros.
+
 El patch genera las instrucciones MCP desde el registro efectivo de cada proceso,
 sin anunciar herramientas filtradas ni imponer un mecanismo de descubrimiento al
 cliente. La política de uso en fuentes es proporcional: contexto suficiente no

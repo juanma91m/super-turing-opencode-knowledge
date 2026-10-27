@@ -7,6 +7,11 @@ tools:
   "playwright_*": false
   "stitch_*": false
 permission:
+  engram_mem_save: deny
+  engram_mem_session_summary: deny
+  engram_mem_update: deny
+  engram_mem_judge: deny
+  engram_mem_review: deny
   edit: deny
   bash:
     "*": deny
