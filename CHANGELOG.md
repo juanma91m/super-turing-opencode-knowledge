@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Punto 6, etapa A: las plantillas opcionales `plan/build` condicionan solo su referencia a `analisis-tecnico-evidencia`; no es paso rutinario ni modifica memoria, permisos, generadores o bloques de autonomía. Sin despliegue ni reemplazo de agentes instalados.
+
 - Punto 5: recuperación proporcional, reader sólo si aporta y está permitido, guardado durable por hito y summary por continuidad nueva. Pedidos explícitos, restricciones críticas, cierres locales y autoridad read-only se preservan; sin cambios de filtros, handlers o anotaciones.
 - Se alinean los textos MCP, descripciones de uso, skill durable y autonomía; se eliminan ejemplos/categorías repetidos en la tool y bootstrap fijo por buckets. Se agregan checks de contrato y composición sin corridas de modelos; no se afirma mejora conductual o de latencia.
 - Los errores determinísticos y respuestas ambiguas de escritura se tratan sin reintentos ciegos ni bypass. El render existente actualiza los bloques desde bases limpias; no se reemplaza el generador ni se cambian permisos por arrastre.

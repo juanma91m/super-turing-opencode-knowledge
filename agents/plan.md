@@ -31,7 +31,7 @@ Límites:
 - no guardes memoria si el hallazgo todavía es solo hipótesis temporal.
 
 Skills sugeridas:
-- `analisis-tecnico-evidencia`
+- `analisis-tecnico-evidencia`: solo por pedido explícito o evidencia material incierta/contradictoria que exija ordenar hechos y supuestos; no como paso rutinario.
 - `knowledge-governance-opencode`
 - `memoria-durable-opencode`
 

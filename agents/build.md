@@ -31,7 +31,7 @@ Límites:
 - no reemplazar validación técnica por memoria.
 
 Skills sugeridas:
-- `analisis-tecnico-evidencia`
+- `analisis-tecnico-evidencia`: solo por pedido explícito o evidencia material incierta/contradictoria que exija ordenar hechos y supuestos; no como paso rutinario.
 - `knowledge-governance-opencode`
 - `memoria-durable-opencode`
 - `memoria-engram-opencode`
