@@ -1,5 +1,15 @@
 # OpenCode Knowledge Add-on
 
+## V2 vigente — 2026-11-19
+
+Integrado en el harness gestionado oficial 2.2.7 ya activado y auditado, no sólo
+en el workshop. Engram y Qdrant mantienen sus stores/settings de la máquina.
+La actualización coordinada de Core respalda ambos antes de publicar una nueva
+entrada; no ejecuta seed, Cloud enroll, recreación de corpus ni restore sobre DBs
+existentes. Un warning legacy de sync no justifica enrolar/reparar Cloud.
+Los instaladores shell de abajo corresponden a V1; no reaplicarlos sobre V2.
+Ver `v2/general.mjs` y el updater `v2/install/README.md` de Core.
+
 Addon separado para el knowledge layer de OpenCode.
 
 ## Qué contiene
@@ -34,6 +44,25 @@ La instalación escribe `~/.config/opencode/.opencode-knowledge-addon.json` con 
 ## Supuesto operativo actual
 
 Este addon asume una instalación base de OpenCode ya funcional, típicamente con `super-turing-opencode` como capa principal en `~/.config/opencode/`.
+
+### Migración V2 en auditoría
+
+La integración V2 está habilitada en el workshop de migración, no desplegada
+globalmente. El [contrato de compatibilidad y
+auditoría de arranque](v2/READ-ONLY-AUDIT.md) registra la aclaración del usuario:
+conservar Knowledge tal como funciona hoy, sin nuevos modos lectores ni cambios
+de backend. Se adapta la integración con V2 preservando datos, persistencia,
+configuración operativa y permisos por rol. No reaplicar el installer V1 al
+workshop: validar la composición V2 de forma incremental.
+
+El [primer incremento Engram V2](v2/ENGRAM-ADAPTER.md) implementa wiring nativo y
+ports de hints/sesión. La [composición de assets y wrappers](v2/ASSETS-WORKSHOP.md)
+ya incorpora Qdrant por sus helpers existentes, sin indexar ni instalar backends.
+Pasaron 24 casos nativos con fixtures. El operador aplicó la composición y pasó
+la verificación del workshop, tras corregir su decoder de respuestas API. Sus
+capturas confirmaron estado y búsqueda reales de Qdrant sobre el corpus existente,
+además de diagnóstico/búsqueda de Engram. Quedan delegación nativa y otras puertas
+de equivalencia antes del corte; no cambia la instalación V1 activa.
 
 ## Qué mueve fuera del stack base
 

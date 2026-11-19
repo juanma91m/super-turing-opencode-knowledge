@@ -1,0 +1,8 @@
+{
+  "tools": [
+    "mem_save", "mem_search", "mem_context", "mem_session_summary",
+    "mem_get_observation", "mem_suggest_topic_key", "mem_update", "mem_judge",
+    "mem_current_project", "mem_doctor", "mem_review"
+  ],
+  "readerDenied": ["mem_save", "mem_session_summary", "mem_update", "mem_judge", "mem_review"]
+}

@@ -64,7 +64,12 @@ from pathlib import Path
 path = Path(sys.argv[1])
 try:
     data = json.loads(path.read_text())
-    enabled = data.get("mcp", {}).get("engram", {}).get("enabled")
+    mcp = data.get("mcp", {})
+    if "servers" in mcp:
+        server = mcp["servers"].get("engram")
+        enabled = None if server is None else not server.get("disabled", False)
+    else:
+        enabled = mcp.get("engram", {}).get("enabled")
     if enabled is True:
         print("yes")
     elif enabled is False:

@@ -148,6 +148,7 @@ def inspect_mcp(binary: str, tool_filter: str) -> dict:
         data.mkdir()
         # Prevent startup migration from looking for orphaned DBs outside the fixture.
         sqlite3.connect(data / "engram.db").close()
+        initial_db_bytes = (data / "engram.db").stat().st_size
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(root),
                "ENGRAM_DATA_DIR": str(data), "ENGRAM_CLOUD_AUTOSYNC": "0"}
         with tempfile.TemporaryFile(mode="w+t", dir=root) as errors:
@@ -186,7 +187,13 @@ def inspect_mcp(binary: str, tool_filter: str) -> dict:
                 return {"instructions": initialized.get("instructions", ""),
                         "protocol": initialized["protocolVersion"],
                         "capabilities": initialized["capabilities"],
-                        "tools": {tool["name"]: tool for tool in listed["tools"]}}
+                        "tools": {tool["name"]: tool for tool in listed["tools"]},
+                        # Characterize startup, not memory tool calls. This empty
+                        # fixture must never be mistaken for the operator's DB.
+                        "fixture_storage_changed": (
+                            (data / "engram.db").stat().st_size != initial_db_bytes
+                            or (data / "engram.db-wal").exists()
+                        )}
             finally:
                 proc.stdin.close()
                 try:
@@ -233,6 +240,15 @@ class EngramMetadataTests(unittest.TestCase):
         self.assertIn("each candidate has its own", self.snapshots["opencode"]["instructions"])
         self.assertEqual(self.snapshots["unknown-selection"]["tools"], {})
         self.assertEqual(set(self.snapshots["custom-with-unknown"]["tools"]), {"mem_search"})
+
+    def test_read_catalog_is_not_a_readonly_storage_mode(self) -> None:
+        # Current backend characterization, NOT the desired V2 read-only gate.
+        # Updating the backend requires revisiting this audit and proving its
+        # replacement guarantee, rather than retaining the observed side effect.
+        snapshot = self.snapshots["read-only"]
+        self.assertEqual(set(snapshot["tools"]), set(self.filters["read-only"].split(",")))
+        self.assertTrue(snapshot["fixture_storage_changed"],
+                        "Startup behavior changed: re-audit V2 storage guarantees")
 
     @unittest.skipUnless(os.environ.get("ENGRAM_BASELINE_BIN"), "Isolated baseline binary required")
     def test_structured_contracts_and_conflict_rules_match_baseline(self) -> None:
