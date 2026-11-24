@@ -56,11 +56,9 @@ PYTHONDONTWRITEBYTECODE=1 TMPDIR=/tmp/opencode OPENCODE_TEST_TMP=/tmp/opencode \
 
 Desde el stack base canónico, con `/tmp/opencode` ya existente:
 
-```bash
-node --test migrations/v2/test/*.test.mjs
-node migrations/v2/smoke-knowledge.mjs --engram-bin=/ruta/absoluta/al/engram-actual
-node migrations/v2/smoke-context7.mjs
-```
+
+Usá la entrada gestionada con el addon configurado; ver [Core](https://github.com/juanma91m/super-turing-opencode/blob/main/v2/install/README.md).
+
 
 El smoke requiere seleccionar explícitamente un ejecutable existente. **No lo
 instala, reconstruye ni reemplaza.** Usa el V2 oficial ya verificado, HOME/config/

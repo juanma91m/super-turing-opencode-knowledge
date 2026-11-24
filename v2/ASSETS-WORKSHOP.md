@@ -170,11 +170,9 @@ capacidad del addon. Debe validarse antes del corte, junto con overlays pendient
 Cerrar primero el cliente **del workshop V2**. No hace falta detener producción
 V1 y este tooling no mata procesos del operador. Desde cualquier directorio:
 
-```bash
-node "$HOME/.local/src/opencode-stack/migrations/v2/knowledge.mjs" plan
-node "$HOME/.local/src/opencode-stack/migrations/v2/knowledge.mjs" apply --client-closed
-node "$HOME/.local/src/opencode-stack/migrations/v2/knowledge.mjs" chat
-```
+
+Usá la entrada gestionada con el addon configurado; ver [Core](https://github.com/juanma91m/super-turing-opencode/blob/main/v2/install/README.md).
+
 
 `--client-closed` es confirmación del operador, no detección ni aislamiento OS.
 Apply es opt-in, preserva el storage/auth del piloto V2 y luego valida la config,
