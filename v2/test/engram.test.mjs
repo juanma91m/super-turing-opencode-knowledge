@@ -11,7 +11,12 @@ import { translateEngram, enableEngram, ENGRAM_TOOLS, READER_DENIED } from '../e
 
 const loadOriginal = async name => {
   const text = execFileSync('git', ['show', `HEAD:plugins/${name}.ts`], { cwd: new URL('../../', import.meta.url), encoding: 'utf8' });
-  return (await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(text, { mode: 'transform' })).toString('base64'))).default;
+  // The committed V1 fixture can already import the shared helper. Resolve
+  // that specifier before loading from a non-hierarchical data URL.
+  const source = stripTypeScriptTypes(text, { mode: 'transform' }).replace(
+    /(['"])\.\.\/lib\/memory-contract\.mjs\1/g, JSON.stringify(new URL('../../lib/memory-contract.mjs', import.meta.url).href),
+  );
+  return (await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))).default;
 };
 
 test('shared hint extraction preserves the committed V1 behavior and synthetic exclusions', async () => {

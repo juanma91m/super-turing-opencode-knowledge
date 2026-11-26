@@ -85,10 +85,11 @@ Este repo pasa a ser dueño de:
 - playbooks y manifest del knowledge layer,
 - patch versionado de Engram.
 
-Engram no se mantiene como fork funcional independiente: el addon fija un commit
-upstream exacto, aplica `patches/engram-source-agent.patch` y construye el binario
-local. El checkout en `~/.local/src/engram-opencode-stack` es estado gestionado de
-build, no el source of truth del cambio.
+Engram no se mantiene como fork independiente. La
+[base del build gestionado es Engram v3.7.2](PLAYBOOK-KNOWLEDGE-ENGRAM.md#base-del-build-gestionado-engram-372),
+fijada en el manifest y compilada con `patches/engram-v3.7.2-opencode.patch`.
+El instalador legacy conserva `patches/engram-source-agent.patch` para
+la base anterior; no se debe ejecutar sobre una instalación ya migrada.
 
 El wiring OpenCode expone una superficie operativa curada: lectura, escritura durable,
 diagnóstico, review y adjudicación explícita. `mem_delete` no se expone a los

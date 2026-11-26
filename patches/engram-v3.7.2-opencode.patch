@@ -1,0 +1,427 @@
+--- a/internal/mcp/mcp.go
++++ b/internal/mcp/mcp.go
+@@ -70,6 +70,8 @@
+ 	// mem_save call (REQ-001). nil means "use the store default" (3).
+ 	// An explicit pointer value (including 0) is forwarded directly.
+ 	Limit *int
++
++	openCodeSummaries bool
+ }
+ 
+ var suggestTopicKey = store.SuggestTopicKey
+@@ -383,6 +385,9 @@
+ // buildServerInstructions dynamically generates the instructions for MCP clients
+ // based on which tools are allowed/registered.
+ func buildServerInstructions(allowlist map[string]bool) string {
++	if instructions, ok := openCodeInstructions(allowlist); ok {
++		return instructions
++	}
+ 	var b strings.Builder
+ 	b.WriteString("Engram provides persistent memory that survives across sessions and compactions.\n\n")
+ 
+@@ -466,6 +471,7 @@
+ 		server.WithInstructions(buildServerInstructions(allowlist)),
+ 	)
+ 
++	_, cfg.openCodeSummaries = openCodeInstructions(allowlist)
+ 	registerTools(srv, s, cfg, allowlist, activity)
+ 	return srv
+ }
+@@ -521,6 +527,7 @@
+ 				mcp.WithString("match_mode",
+ 					mcp.Description("Token matching: \"all\" (default — every token must match, FTS5 AND) or \"any\" (any token matches — broader recall for multi-token queries). Any other value returns an error."),
+ 				),
++				mcp.WithString("source_agent", mcp.Description("Filter by the stored source-agent label.")),
+ 				mcp.WithString("response_format",
+ 					mcp.Description("Response format: omit for the legacy response, or use \"compact\" for bounded previews and structured results."),
+ 				),
+@@ -624,6 +631,7 @@
+ 				mcp.WithBoolean("capture_prompt",
+ 					mcp.Description("Automatically capture the current user prompt when available. Omission defaults to true; false skips capture for automated saves. If present, must be a boolean; other values return capture_prompt must be a boolean before project resolution or writes."),
+ 				),
++				mcp.WithString("source_agent", mcp.Description("Optional source-agent label; not an authorization identity.")),
+ 			),
+ 			queuedWriteHandler(writeQueue, handleSave(s, cfg, activity)),
+ 		)
+@@ -666,6 +674,7 @@
+ 				mcp.WithString("topic_key",
+ 					mcp.Description("New topic key (normalized internally)"),
+ 				),
++				mcp.WithString("source_agent", mcp.Description("Update source-agent label; empty clears it.")),
+ 			),
+ 			queuedWriteHandler(writeQueue, handleUpdate(s, cfg)),
+ 		)
+@@ -965,8 +974,9 @@
+ 					mcp.Required(),
+ 					mcp.Description("Full session summary using the Goal/Instructions/Discoveries/Accomplished/Next Steps/Relevant Files format"),
+ 				),
++				mcp.WithString("source_agent", mcp.Description("Optional source-agent label.")),
+ 				mcp.WithString("session_id",
+-					mcp.Description(sessionIDPropertyDescription),
++					mcp.Description("Use the authoritative session ID supplied by the host. OpenCode summaries may register their actual ses_ ID when the current project is unambiguous; never invent one."),
+ 				),
+ 				mcp.WithString("project",
+ 					mcp.Description("Optional explicit project for this memory. Accepted only when backed by known context (existing project, matching session, repo config, or ambiguous-project recovery); invalid or unbacked names fail loudly."),
+@@ -1354,6 +1364,10 @@
+ 
+ func handleSearch(s *store.Store, cfg MCPConfig, activity *SessionActivity) server.ToolHandlerFunc {
+ 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
++		sourceAgent, _, valid := sourceAgentArg(req.GetArguments())
++		if !valid {
++			return mcp.NewToolResultError("Invalid source_agent label"), nil
++		}
+ 		query, _ := req.GetArguments()["query"].(string)
+ 		typ, _ := req.GetArguments()["type"].(string)
+ 		projectOverride, _ := req.GetArguments()["project"].(string)
+@@ -1406,6 +1420,7 @@
+ 		activity.RecordToolCall(sessionID)
+ 
+ 		results, err := s.SearchPreviewsContext(ctx, query, store.SearchOptions{
++			ToolName:  sourceAgent,
+ 			Type:      typ,
+ 			Project:   searchProject,
+ 			Scope:     scope,
+@@ -1433,7 +1448,15 @@
+ 			if nudge := activity.NudgeIfNeededForProject(sessionID, project); nudge != "" {
+ 				resultText += nudge
+ 			}
+-			return respondWithProject(detRes, resultText, map[string]any{"results": store.CompactSearchProjection(results, relationsMap)}), nil
++			entries := store.CompactSearchProjection(results, relationsMap)
++			for i, row := range results {
++				if row.ToolName != nil {
++					if label := sourceAgentLabel(*row.ToolName); label != "" {
++						entries[i]["source_agent"] = label
++					}
++				}
++			}
++			return respondWithProject(detRes, resultText, map[string]any{"results": entries}), nil
+ 		}
+ 
+ 		var b strings.Builder
+@@ -1480,6 +1503,12 @@
+ 			if r.Org != nil {
+ 				entry["org"] = *r.Org
+ 			}
++			if r.ToolName != nil {
++				if label := sourceAgentLabel(*r.ToolName); label != "" {
++					entry["source_agent"] = label
++					fmt.Fprintf(&b, "    Source agent: %s\n", label)
++				}
++			}
+ 			if r.ReviewAfter != nil {
+ 				entry["review_after"] = *r.ReviewAfter
+ 			}
+@@ -1614,6 +1643,10 @@
+ 
+ func handleSave(s *store.Store, cfg MCPConfig, activity *SessionActivity) server.ToolHandlerFunc {
+ 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
++		sourceAgent, _, valid := sourceAgentArg(req.GetArguments())
++		if !valid {
++			return mcp.NewToolResultError("Invalid source_agent label"), nil
++		}
+ 		timing := beginSaveTiming()
+ 		if timing != nil {
+ 			defer timing.finish()
+@@ -1719,6 +1752,7 @@
+ 			Type:              typ,
+ 			Title:             title,
+ 			Content:           content,
++			ToolName:          sourceAgent,
+ 			Project:           project,
+ 			Scope:             scope,
+ 			TopicKey:          topicKey,
+@@ -1884,8 +1918,13 @@
+ 		if v, ok := req.GetArguments()["topic_key"].(string); ok {
+ 			update.TopicKey = &v
+ 		}
++		if sourceAgent, present, valid := sourceAgentArg(req.GetArguments()); !valid {
++			return mcp.NewToolResultError("Invalid source_agent label"), nil
++		} else if present {
++			update.ToolName = &sourceAgent
++		}
+ 
+-		if update.Title == nil && update.Content == nil && update.Find == nil && update.Replace == nil && update.Type == nil && update.Project == nil && update.Scope == nil && update.TopicKey == nil {
++		if update.Title == nil && update.Content == nil && update.Find == nil && update.Replace == nil && update.Type == nil && update.Project == nil && update.Scope == nil && update.TopicKey == nil && update.ToolName == nil {
+ 			return mcp.NewToolResultError("provide at least one field to update"), nil
+ 		}
+ 
+@@ -2481,7 +2520,11 @@
+ 		}
+ 		toolName := ""
+ 		if obs.ToolName != nil {
+-			toolName = fmt.Sprintf("\nTool: %s", *obs.ToolName)
++			if label := sourceAgentLabel(*obs.ToolName); label != "" {
++				toolName = fmt.Sprintf("\nSource Agent: %s", label)
++			} else {
++				toolName = fmt.Sprintf("\nTool: %s", *obs.ToolName)
++			}
+ 		}
+ 		duplicateMeta := fmt.Sprintf("\nDuplicates: %d", obs.DuplicateCount)
+ 		revisionMeta := fmt.Sprintf("\nRevisions: %d", obs.RevisionCount)
+@@ -2567,6 +2610,10 @@
+ // the precedence of mem_save.
+ func handleSessionSummary(s *store.Store, cfg MCPConfig, activity *SessionActivity) server.ToolHandlerFunc {
+ 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
++		sourceAgent, _, valid := sourceAgentArg(req.GetArguments())
++		if !valid {
++			return mcp.NewToolResultError("Invalid source_agent label"), nil
++		}
+ 		content, _ := req.GetArguments()["content"].(string)
+ 		sessionID, _ := req.GetArguments()["session_id"].(string)
+ 		projectChoice, _ := req.GetArguments()["project"].(string)
+@@ -2577,6 +2624,23 @@
+ 		}
+ 
+ 		detRes, project, _, projectError := prepareWriteProject(s, cfg, activity, req)
++		bootstrap := false
++		_, hasReason := req.GetArguments()["project_choice_reason"]
++		_, hasToken := req.GetArguments()["recovery_token"]
++		if cfg.openCodeSummaries && projectError != nil && !hasReason && !hasToken && openCodeSessionPattern.MatchString(sessionID) {
++			// Only an unregistered OpenCode ID may use normal context discovery.
++			// An explicit project cannot bootstrap or redirect that session.
++			if _, err := s.GetSession(sessionID); errors.Is(err, sql.ErrNoRows) {
++				resolved, resolveErr := resolveWriteProjectWithProcessOverride(s, cfg.DefaultProject, false)
++				expected, _ := store.NormalizeProject(resolved.Project)
++				if _, explicit := req.GetArguments()["project"]; !explicit || strings.TrimSpace(projectChoice) == expected {
++					if resolveErr == nil && expected != "" {
++						detRes, project, projectError = resolved, expected, nil
++						bootstrap = true
++					}
++				}
++			}
++		}
+ 		if projectError != nil {
+ 			return projectError, nil
+ 		}
+@@ -2590,7 +2654,18 @@
+ 		}
+ 
+ 		// Preserve evidence atomically when the implicit session is first created.
+-		_ = ensureImplicitSessionWithCWD(s, sessionID, project, captureProjectEvidence(s, detRes, sessionID, projectChoice, cfg.DefaultProject))
++		mode := store.SessionOwnershipShared
++		if bootstrap {
++			mode = store.SessionOwnershipProjectOwned
++		}
++		sessionErr := s.CreateSessionWithOwnershipMode(sessionID, project, currentWorkingDirectory(), mode, captureProjectEvidence(s, detRes, sessionID, projectChoice, cfg.DefaultProject))
++		if cfg.openCodeSummaries && sessionErr != nil {
++			return mcp.NewToolResultError("Failed to register summary session: " + sessionErr.Error()), nil
++		}
++		topicKey := ""
++		if cfg.openCodeSummaries {
++			topicKey = openCodeSummaryTopic(sessionID)
++		}
+ 
+ 		// org inherits from the nearest .engram/config.json org field for cwd,
+ 		// the same as handleSave (#776) — mem_session_summary has no explicit
+@@ -2610,7 +2685,9 @@
+ 			Type:              "session_summary",
+ 			Title:             fmt.Sprintf("Session summary: %s", project),
+ 			Content:           content,
++			ToolName:          sourceAgent,
+ 			Project:           project,
++			TopicKey:          topicKey,
+ 			Org:               org,
+ 		})
+ 		if err != nil {
+--- a/internal/store/store.go
++++ b/internal/store/store.go
+@@ -245,6 +245,7 @@
+ 	Title       string  `json:"title"`
+ 	Preview     string  `json:"preview"`
+ 	Truncated   bool    `json:"truncated"`
++	ToolName    *string `json:"-"`
+ 	Project     *string `json:"project,omitempty"`
+ 	TopicKey    *string `json:"topic_key,omitempty"`
+ 	Scope       string  `json:"scope"`
+@@ -305,6 +306,7 @@
+ }
+ 
+ type SearchOptions struct {
++	ToolName  string `json:"-"`
+ 	Type      string `json:"type,omitempty"`
+ 	Project   string `json:"project,omitempty"`
+ 	Scope     string `json:"scope,omitempty"`
+@@ -346,6 +348,7 @@
+ }
+ 
+ type UpdateObservationParams struct {
++	ToolName *string `json:"-"`
+ 	Type     *string `json:"type,omitempty"`
+ 	Title    *string `json:"title,omitempty"`
+ 	Content  *string `json:"content,omitempty"`
+@@ -5503,7 +5506,7 @@
+ 		return nil, ErrObservationContentRequired
+ 	}
+ 
+-	hasMetadata := p.Type != nil || p.Title != nil || p.Project != nil || p.Scope != nil || p.TopicKey != nil
++	hasMetadata := p.Type != nil || p.Title != nil || p.Project != nil || p.Scope != nil || p.TopicKey != nil || p.ToolName != nil
+ 	var updated *Observation
+ 	err := s.withTx(func(tx *sql.Tx) error {
+ 		obs, err := s.getObservationTx(tx, id)
+@@ -5527,6 +5530,10 @@
+ 		}
+ 		scope := obs.Scope
+ 		topicKey := derefString(obs.TopicKey)
++		toolName := derefString(obs.ToolName)
++		if p.ToolName != nil {
++			toolName = *p.ToolName
++		}
+ 
+ 		if p.Type != nil {
+ 			typ = *p.Type
+@@ -5578,6 +5585,7 @@
+ 			     project = CAST(? AS TEXT),
+ 			     scope = ?,
+ 			     topic_key = ?,
++			     tool_name = ?,
+ 			     normalized_hash = ?,
+ 			     revision_count = revision_count + 1,
+ 			     updated_at = ?
+@@ -5588,6 +5596,7 @@
+ 			nullableString(project),
+ 			scope,
+ 			nullableString(topicKey),
++			nullableString(toolName),
+ 			hashNormalized(content),
+ 			Now(),
+ 			id,
+@@ -6066,7 +6075,7 @@
+ 		tkSQL := `
+ 			SELECT id, ifnull(sync_id, '') as sync_id, type, title,
+ 			       substr(content, 1, 300) as preview, length(content) > 300 as truncated,
+-			       project, topic_key, scope, org, review_after, pinned, created_at
++			       tool_name, project, topic_key, scope, org, review_after, pinned, created_at
+ 			FROM observations
+ 			WHERE topic_key = ? AND deleted_at IS NULL
+ 		`
+@@ -6087,6 +6096,10 @@
+ 			tkSQL += " AND org = ?"
+ 			tkArgs = append(tkArgs, opts.Org)
+ 		}
++		if opts.ToolName != "" {
++			tkSQL += " AND tool_name = ?"
++			tkArgs = append(tkArgs, opts.ToolName)
++		}
+ 		tkSQL += " ORDER BY updated_at DESC LIMIT ?"
+ 		tkArgs = append(tkArgs, limit)
+ 
+@@ -6199,7 +6212,7 @@
+ func buildSearchPreviewFTSQuery(ftsQuery string, opts SearchOptions, limit int) (string, []any) {
+ 	return buildSearchFTSQueryWithColumns(`o.id, ifnull(o.sync_id, '') as sync_id, o.type, o.title,
+ 	       substr(o.content, 1, 300) as preview, length(o.content) > 300 as truncated,
+-	       o.project, o.topic_key, o.scope, o.org, o.review_after, o.pinned, o.created_at`, ftsQuery, opts, limit)
++	       o.tool_name, o.project, o.topic_key, o.scope, o.org, o.review_after, o.pinned, o.created_at`, ftsQuery, opts, limit)
+ }
+ 
+ func buildSearchFTSQueryWithColumns(columns, ftsQuery string, opts SearchOptions, limit int) (string, []any) {
+@@ -6248,6 +6261,10 @@
+ 		sqlQ += " AND o.org = ?"
+ 		args = append(args, opts.Org)
+ 	}
++	if opts.ToolName != "" {
++		sqlQ += " AND o.tool_name = ?"
++		args = append(args, opts.ToolName)
++	}
+ 
+ 	sqlQ += " ORDER BY " + compositeRank + " ASC, COALESCE(NULLIF(o.sync_id, ''), printf('%020d', o.id)) ASC, o.id ASC LIMIT ?"
+ 	return sqlQ, append(args, limit)
+@@ -6290,7 +6307,7 @@
+ func buildSearchPreviewLIKEQuery(query string, opts SearchOptions, limit int) (string, []any) {
+ 	return buildSearchLIKEQueryWithColumns(`o.id, ifnull(o.sync_id, '') as sync_id, o.type, o.title,
+ 	       substr(o.content, 1, 300) as preview, length(o.content) > 300 as truncated,
+-	       o.project, o.topic_key, o.scope, o.org, o.review_after, o.pinned, o.created_at`, query, opts, limit)
++	       o.tool_name, o.project, o.topic_key, o.scope, o.org, o.review_after, o.pinned, o.created_at`, query, opts, limit)
+ }
+ 
+ func buildSearchLIKEQueryWithColumns(columns, query string, opts SearchOptions, limit int) (string, []any) {
+@@ -6330,6 +6347,10 @@
+ 		sqlQ += " AND o.org = ?"
+ 		args = append(args, opts.Org)
+ 	}
++	if opts.ToolName != "" {
++		sqlQ += " AND o.tool_name = ?"
++		args = append(args, opts.ToolName)
++	}
+ 	sqlQ += " ORDER BY datetime(o.updated_at) DESC, o.id DESC LIMIT ?"
+ 	return sqlQ, append(args, limit)
+ }
+@@ -13573,7 +13594,7 @@
+ func scanSearchPreviewRow(scanner observationScanner, r *SearchPreviewResult, withRank bool) error {
+ 	dest := []any{
+ 		&r.ID, &r.SyncID, &r.Type, &r.Title, &r.Preview, &r.Truncated,
+-		&r.Project, &r.TopicKey, &r.Scope, &r.Org, &r.ReviewAfter, &r.Pinned, &r.CreatedAt,
++		&r.ToolName, &r.Project, &r.TopicKey, &r.Scope, &r.Org, &r.ReviewAfter, &r.Pinned, &r.CreatedAt,
+ 	}
+ 	if withRank {
+ 		dest = append(dest, &r.Rank)
+--- /dev/null
++++ b/internal/mcp/opencode_compat.go
+@@ -0,0 +1,68 @@
++package mcp
++
++import (
++	"crypto/sha256"
++	"encoding/hex"
++	"regexp"
++	"strings"
++)
++
++// Reuse the deployed tool_name encoding. This is a label, not authentication.
++var sourceAgentPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,120}$`)
++var openCodeSessionPattern = regexp.MustCompile(`^ses_[A-Za-z0-9]{1,160}$`)
++var canonicalSummaryIDPattern = regexp.MustCompile(`^[a-z0-9_-]+$`)
++
++func sourceAgentLabel(raw string) string {
++	name, present := strings.CutPrefix(raw, "agent:")
++	if present && sourceAgentPattern.MatchString(name) {
++		return name
++	}
++	return ""
++}
++
++func sourceAgentArg(args map[string]any) (encoded string, present, valid bool) {
++	v, present := args["source_agent"]
++	if !present {
++		return "", false, true
++	}
++	raw, ok := v.(string)
++	if !ok {
++		return "", true, false
++	}
++	label := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "agent:"))
++	if label == "" {
++		return "", true, true
++	}
++	if !sourceAgentPattern.MatchString(label) {
++		return "", true, false
++	}
++	return "agent:" + label, true, true
++}
++
++func openCodeSummaryTopic(sessionID string) string {
++	sessionID = strings.TrimSpace(sessionID)
++	key := "session/" + sessionID + "/summary"
++	if len(key) <= 120 && canonicalSummaryIDPattern.MatchString(sessionID) {
++		return key
++	}
++	digest := sha256.Sum256([]byte(sessionID))
++	return "session/id-" + hex.EncodeToString(digest[:16]) + "/summary"
++}
++
++func openCodeInstructions(allowlist map[string]bool) (string, bool) {
++	const tools = "mem_context, mem_current_project, mem_doctor, mem_get_observation, mem_judge, mem_review, mem_save, mem_search, mem_session_summary, mem_suggest_topic_key, mem_update"
++	names := strings.Split(tools, ", ")
++	if len(allowlist) != len(names) {
++		return "", false
++	}
++	for _, name := range names {
++		if !allowlist[name] {
++			return "", false
++		}
++	}
++	return "Engram provides curated durable memory across sessions.\n\nREGISTERED TOOLS:\n" + tools + `
++
++Follow the client's role authority and local memory rules. The listing is not a permission grant. Reuse sufficient context; do not retrieve, save or summarize by routine. Save verified durable findings with capture_prompt=false for automatic saves. Summaries are for new continuity or an explicit local requirement. Never persist secrets, private content, raw prompts or tool logs, or use CLI as a bypass.
++
++After mem_save, inspect judgment_required. Each candidate has its own candidates[].judgment_id: call mem_judge for each, never with the top-level ID. Ask the user for confidence below 0.7 or for supersedes/conflicts_with on architecture, policy or decisions. Otherwise record related, compatible, scoped or not_conflict as appropriate. If blocked by client permissions, leave it pending and report it.`, true
++}

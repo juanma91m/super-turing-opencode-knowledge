@@ -24,7 +24,62 @@
 - DB local: `~/.engram/engram.db`
 - source checkout gestionado: `~/.local/src/engram-opencode-stack`
 
+## Base del build gestionado: Engram 3.7.2
+
+El build del addon deriva de **[Engram v3.7.2][engram-372]**,
+commit `c6ba9e3c0e98ffa0d5591481d8670a575e7b70b0`.
+`KNOWLEDGE-MANIFEST.json` fija el archivo fuente, su SHA-256 y Go 1.26.11.
+La etiqueta `3.7.2+opencode.1` distingue nuestro build del binario oficial.
+El manifest describe el build, no la activación en cada máquina.
+Confirmá la versión instalada y la que reporta el MCP tras reconectarlo.
+
+Desde el checkout canónico del addon, construir sin acceso a la base
+Engram (la descarga y Go sí pueden usar red):
+
+```bash
+bash scripts/build-engram-candidate.sh /ruta/privada/existente/engram-3.7.2-opencode.1
+```
+
+El build no sustituye archivos, no modifica el checkout anterior y
+no abre la base. El parche nuevo conserva sólo `source_agent`
+(codificado en `tool_name`), la clave histórica de los resúmenes
+idempotentes y las instrucciones de memoria curada para el catálogo
+de 11 herramientas. Un primer resumen con un ID `ses_…` suministrado
+por OpenCode sólo puede vincularlo al proyecto detectado sin
+ambigüedad; `mem_save` no obtiene esta excepción. Se conserva la
+exigencia upstream de `expected_project` para `mem_update`: es
+el dueño verificado de la observación, no un proyecto inferido o un
+cambio de dueño.
+
+Se aprovechan las mejoras upstream de búsqueda y del arranque SQLite,
+y la redacción de bloques privados en `mem_judge`. No se habilitan Pi,
+Cloud, daemon, autosync, organizaciones ni herramientas nuevas. No se
+reaplican los parches históricos de diagnóstico Cloud o de escaneo
+semántico; no hay cambio en los wrappers o despliegues Cloud.
+
+Antes del corte: comprobar 11 herramientas y denies de OpenCode,
+resumen que actualiza la misma observación, búsqueda/procedencia y
+rechazo de proyecto incorrecto. Validar integridad y preservación de
+datos en una copia SQLite consistente, sin red y con permisos privados.
+Conservar una copia consistente del estado y el binario anteriores
+para revertir juntos. No asumir que el binario viejo pueda abrir una
+base que ya abrió la versión nueva.
+
+Prueba de integración del candidato (base sintética, sin red, con `bwrap`):
+
+```bash
+ENGRAM_372_CANDIDATE_BIN=/ruta/privada/existente/engram-3.7.2-opencode.1 \
+  python3 -B -m unittest discover -s tests -p test_engram_372_candidate.py -v
+```
+
+[engram-372]: https://github.com/Gentleman-Programming/engram/releases/tag/v3.7.2
+
 ## Instalación / rebuild
+
+Los siguientes comandos son **legacy**: todavía construyen la base
+anterior y no deben ejecutarse para reconstruir 3.7.2, ni sobre una
+instalación que ya migró su base. Para 3.7.2 usá el builder de arriba
+y tratá el reemplazo como un corte separado.
 
 ```bash
 bash ~/.config/opencode/scripts/install-knowledge-engram.sh
@@ -81,7 +136,7 @@ handlers, campos estructurados o anotaciones. Las descripciones de uso sí cambi
 con la política; no son cambios de permisos. El template Claude puede
 tener otro filtro: no asumir que coincide con OpenCode o con el cliente instalado.
 
-Para validar metadatos, los tests de integración aceptan `ENGRAM_CANDIDATE_BIN` y,
+Para validar metadatos de la línea anterior, los tests aceptan `ENGRAM_CANDIDATE_BIN` y,
 opcionalmente, `ENGRAM_BASELINE_BIN`, ambos paths de builds aislados. Sin candidato
 explícito, las pruebas nativas se omiten: nunca arrancan por defecto el binario
 instalado. Sus fixtures aíslan HOME/cwd/datos, desactivan autosync y precrean un
